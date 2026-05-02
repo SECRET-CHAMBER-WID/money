@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#e6ecf2" />
     <title>Secret Chamber Credits</title>
     <link rel="manifest" href="./manifest.json" />
-    <link rel="stylesheet" href="./styles.css?v=8" />
+    <link rel="stylesheet" href="./styles.css?v=9" />
   </head>
   <body>
     <svg class="icon-defs" aria-hidden="true">
@@ -86,8 +86,8 @@
             <input id="searchInput" type="search" placeholder="&#51060;&#47492; &#44160;&#49353;" />
           </label>
           <div class="currency-switch" role="group" aria-label="Currency">
-            <button id="krwMode" type="button" data-currency="krw" class="is-active">&#50896;</button>
-            <button id="coinMode" type="button" data-currency="coin">&#53076;&#51064;</button>
+            <button id="krwMode" type="button" data-currency="krw" class="is-active">&#65510;</button>
+            <button id="coinMode" type="button" data-currency="coin">&#44552;/&#51008;</button>
           </div>
         </div>
       </header>
@@ -133,7 +133,7 @@
         </div>
         <section id="peopleList" class="people-list"></section>
 
-        <div class="section-heading">
+        <div id="ledgerSection" class="section-heading">
           <div>
             <p class="eyebrow">Ledger</p>
             <h2>&#51060;&#46041; &#45236;&#50669;</h2>
@@ -165,7 +165,7 @@
             <p class="eyebrow">Updates</p>
             <h2>&#50508;&#47548;</h2>
           </div>
-          <button id="markReadButton" class="soft-button" type="button">&#47784;&#46160; &#51069;&#51020;</button>
+          <button id="markReadButton" class="soft-button" type="button">&#51221;&#47532;</button>
         </div>
         <section id="alertList" class="timeline-list"></section>
       </section>
@@ -181,6 +181,10 @@
             </label>
           </div>
           <form id="profileForm" class="profile-form">
+            <div class="emoji-field">
+              <p class="field-title">&#54532;&#47196;&#54596; &#50500;&#51060;&#53080;</p>
+              <div id="emojiPicker" class="emoji-picker" role="group" aria-label="Profile icon"></div>
+            </div>
             <label>
               &#51060;&#47492;
               <input id="profileName" maxlength="18" required />
@@ -279,6 +283,6 @@
       </div>
     </template>
 
-    <script src="./app.js?v=8" defer></script>
+    <script src="./app.js?v=9" defer></script>
   </body>
 </html>

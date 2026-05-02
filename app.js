@@ -5,14 +5,14 @@ const GITHUB_SYNC_KEY = "secret-chamber-credits-github-sync";
 const ADMIN_NAME = "\uc704\ub4dc";
 const ADMIN_PIN = "4001";
 const ADMIN_ID = "operator-with-4001";
-const VERSION = 7;
+const VERSION = 8;
 
 const COINS = [
   { key: "gold", label: "\uae08\ud654", short: "G", value: 10000, emoji: "\uD83D\uDFE1" },
   { key: "silver", label: "\uc740\ud654", short: "S", value: 1, emoji: "\u26AA" },
 ];
 
-const COLORS = ["#607d9c", "#56b7a9", "#d8b85f", "#c96f7d", "#59616d", "#4f8fbd", "#6b9a72", "#be7b56"];
+const DEFAULT_EMOJIS = ["\u2728", "\uD83C\uDF19", "\uD83C\uDF40", "\uD83C\uDF52", "\uD83C\uDF6F", "\uD83C\uDF80", "\uD83C\uDF81", "\uD83C\uDFA7", "\uD83D\uDC8E", "\uD83D\uDE80"];
 const sourceId = crypto.randomUUID ? crypto.randomUUID() : String(Date.now());
 const channel = "BroadcastChannel" in window ? new BroadcastChannel("secret-chamber-credits") : null;
 
@@ -69,6 +69,7 @@ const els = {
   githubSyncStatus: $("#githubSyncStatus"),
   peopleFilter: $("#peopleFilter"),
   peopleList: $("#peopleList"),
+  ledgerSection: $("#ledgerSection"),
   ledgerList: $("#ledgerList"),
   chatList: $("#chatList"),
   chatForm: $("#chatForm"),
@@ -79,6 +80,7 @@ const els = {
   unreadDot: $("#unreadDot"),
   profilePhotoButton: $("#profilePhotoButton"),
   photoInput: $("#photoInput"),
+  emojiPicker: $("#emojiPicker"),
   profileForm: $("#profileForm"),
   profileName: $("#profileName"),
   profileAlias: $("#profileAlias"),
@@ -174,6 +176,7 @@ function normalizeState(nextState) {
     user.name = normalizeName(user.name);
     user.alias = normalizeName(user.alias || "");
     user.photo = user.photo || "";
+    user.emoji = DEFAULT_EMOJIS.includes(user.emoji) ? user.emoji : emojiForUser(user);
     user.balance = Math.max(0, Math.round(Number(user.balance) || 0));
     user.createdAt = Number(user.createdAt) || Date.now();
     user.lastActive = Number(user.lastActive) || user.createdAt;
@@ -191,6 +194,7 @@ async function ensureAdmin() {
       alias: "",
       pinHash: adminHash,
       photo: "",
+      emoji: DEFAULT_EMOJIS[0],
       balance: 0,
       isAdmin: true,
       createdAt: Date.now(),
@@ -293,7 +297,7 @@ function formatAmount(amount, mode = ui.currency) {
   if (mode === "coin") {
     return coinParts(value).map((part) => `${part.emoji} ${part.count.toLocaleString("ko-KR")} ${part.label}`).join("  ");
   }
-  return `\uc6d0\ud654 ${value.toLocaleString("ko-KR")}\uc6d0`;
+  return `\uFFE6${value.toLocaleString("ko-KR")}`;
 }
 
 function coinParts(amount) {
@@ -406,20 +410,15 @@ function formatTime(timestamp) {
   }).format(new Date(timestamp));
 }
 
-function colorForUser(user) {
+function emojiForUser(user) {
   const seed = Array.from(user?.id || user?.name || "scc").reduce((sum, char) => sum + char.charCodeAt(0), 0);
-  return COLORS[seed % COLORS.length];
-}
-
-function initialForUser(user) {
-  const name = displayName(user);
-  return Array.from(name)[0]?.toUpperCase() || "S";
+  return DEFAULT_EMOJIS[seed % DEFAULT_EMOJIS.length];
 }
 
 function setAvatarElement(element, user) {
-  element.textContent = user?.photo ? "" : initialForUser(user);
-  element.style.backgroundColor = colorForUser(user);
+  element.textContent = user?.photo ? "" : user?.emoji || emojiForUser(user);
   element.style.backgroundImage = user?.photo ? `url("${user.photo}")` : "";
+  element.classList.toggle("has-photo", Boolean(user?.photo));
 }
 
 function makeIconUse(iconId) {
@@ -472,7 +471,11 @@ function renderHome(user) {
   els.peopleFilter.value = ui.filter;
   renderAmountFields(els.seedAmountFields, state.settings.seedAmount);
   renderPeople(user);
-  renderLedger(user);
+  const showLedger = Boolean(user.isAdmin);
+  els.ledgerSection.classList.toggle("is-hidden", !showLedger);
+  els.ledgerList.classList.toggle("is-hidden", !showLedger);
+  if (showLedger) renderLedger(user);
+  else els.ledgerList.textContent = "";
 }
 
 function renderGithubSyncPanel() {
@@ -557,6 +560,14 @@ function renderPeople(user) {
       actions.append(manage);
 
       if (!person.isAdmin) {
+        const reset = document.createElement("button");
+        reset.className = "mini-button tiny";
+        reset.type = "button";
+        reset.setAttribute("aria-label", `${person.name} reset balance`);
+        reset.textContent = "0";
+        reset.addEventListener("click", () => resetUserCredits(person.id));
+        actions.append(reset);
+
         const remove = document.createElement("button");
         remove.className = "mini-button danger";
         remove.type = "button";
@@ -626,6 +637,7 @@ function ledgerTitle(entry) {
   }
   if (entry.type === "seed") return `${entryName(entry, "targetName", "targetId")} \ucd08\uae30 \uc790\ubcf8`;
   if (entry.type === "delete") return `${entry.targetName || "\uc0ac\uc6a9\uc790"} \uc0ad\uc81c`;
+  if (entry.type === "reset-user") return `${entryName(entry, "targetName", "targetId")} \uc794\uc561 \ub9ac\uc14b`;
   if (entry.type === "reset") return "\ud06c\ub808\ub527 \ub9ac\uc14b";
   return "Update";
 }
@@ -635,6 +647,7 @@ function ledgerBody(entry) {
   if (entry.type === "adjustment") return `${entryName(entry, "operatorName", "operatorId")} - ${entry.memo || "\uad00\ub9ac\uc790 \uc870\uc815"}`;
   if (entry.type === "seed") return `${formatAmount(entry.amount)} - ${entryName(entry, "operatorName", "operatorId")}`;
   if (entry.type === "delete") return `${entryName(entry, "operatorName", "operatorId")} - ${entry.memo || "\uc0ac\uc6a9\uc790 \uc0ad\uc81c"}`;
+  if (entry.type === "reset-user") return `${entryName(entry, "operatorName", "operatorId")} - ${entry.memo || "\uc794\uc561 0"}`;
   if (entry.type === "reset") return `${entryName(entry, "operatorName", "operatorId")} - all wallets 0`;
   return entry.memo || "";
 }
@@ -687,6 +700,7 @@ function notificationsFor(user) {
 function renderAlerts(user) {
   els.alertList.textContent = "";
   const alerts = notificationsFor(user);
+  els.markReadButton.disabled = alerts.length === 0;
   els.unreadDot.classList.toggle("is-hidden", alerts.length === 0);
 
   if (!alerts.length) {
@@ -695,8 +709,19 @@ function renderAlerts(user) {
   }
 
   alerts.slice(0, 80).forEach((alert) => {
-    const card = document.createElement("article");
-    card.className = "timeline-card";
+    const row = document.createElement("article");
+    row.className = "alert-row";
+    row.dataset.noticeId = alert.id;
+
+    const remove = document.createElement("button");
+    remove.className = "alert-delete";
+    remove.type = "button";
+    remove.setAttribute("aria-label", "Delete alert");
+    remove.append(makeIconUse("icon-trash"));
+    remove.addEventListener("click", () => deleteNotification(alert.id));
+
+    const card = document.createElement("div");
+    card.className = "timeline-card alert-card";
     const header = document.createElement("header");
     const strong = document.createElement("strong");
     strong.textContent = scrubOperatorText(alert.title);
@@ -707,7 +732,9 @@ function renderAlerts(user) {
     const body = document.createElement("p");
     body.textContent = scrubOperatorText(alert.body);
     card.append(header, body);
-    els.alertList.append(card);
+    row.append(remove, card);
+    bindAlertSwipe(row, card);
+    els.alertList.append(row);
   });
 }
 
@@ -716,6 +743,79 @@ function renderProfile(user) {
   els.profileName.value = user.name;
   els.profileAlias.value = user.alias || "";
   els.profileName.disabled = user.isAdmin;
+  renderEmojiPicker(user);
+}
+
+function renderEmojiPicker(user) {
+  els.emojiPicker.textContent = "";
+  DEFAULT_EMOJIS.forEach((emoji) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `emoji-choice${(user.emoji || emojiForUser(user)) === emoji ? " is-active" : ""}`;
+    button.textContent = emoji;
+    button.setAttribute("aria-label", `Profile icon ${emoji}`);
+    button.addEventListener("click", () => {
+      user.emoji = emoji;
+      user.lastActive = Date.now();
+      persist();
+      renderAll();
+    });
+    els.emojiPicker.append(button);
+  });
+}
+
+function deleteNotification(noticeId) {
+  const user = currentUser();
+  if (!user) return;
+  state.notifications = state.notifications.filter((notice) => {
+    if (notice.id !== noticeId) return true;
+    return !(notice.userId === user.id || (user.isAdmin && notice.userId === "admin"));
+  });
+  persist();
+  renderAlerts(user);
+}
+
+function closeOpenAlerts() {
+  document.querySelectorAll(".alert-row.is-open").forEach((row) => row.classList.remove("is-open"));
+}
+
+function bindAlertSwipe(row, card) {
+  let startX = 0;
+  let startY = 0;
+  let dragging = false;
+
+  card.addEventListener("pointerdown", (event) => {
+    startX = event.clientX;
+    startY = event.clientY;
+    dragging = true;
+  });
+
+  card.addEventListener("pointermove", (event) => {
+    if (!dragging) return;
+    const dx = event.clientX - startX;
+    const dy = event.clientY - startY;
+    if (Math.abs(dx) < 8 || Math.abs(dx) < Math.abs(dy)) return;
+    if (dx < 0) row.classList.add("is-dragging");
+  });
+
+  const finish = (event) => {
+    if (!dragging) return;
+    dragging = false;
+    row.classList.remove("is-dragging");
+    const dx = event.clientX - startX;
+    if (dx < -42) {
+      closeOpenAlerts();
+      row.classList.add("is-open");
+    } else if (dx > 18) {
+      row.classList.remove("is-open");
+    }
+  };
+
+  card.addEventListener("pointerup", finish);
+  card.addEventListener("pointercancel", () => {
+    dragging = false;
+    row.classList.remove("is-dragging");
+  });
 }
 
 function renderActiveTab() {
@@ -737,14 +837,30 @@ function scrollActiveScreenToBottom() {
   if (screen) screen.scrollTo({ top: screen.scrollHeight, behavior: "smooth" });
 }
 
+function blurActiveControl() {
+  const active = document.activeElement;
+  if (active && typeof active.blur === "function") active.blur();
+}
+
+function restoreMobileViewport() {
+  const screen = document.querySelector(".screen.is-active");
+  if (screen) screen.scrollLeft = 0;
+  els.appView.scrollLeft = 0;
+  window.scrollTo(0, 0);
+  window.setTimeout(() => window.scrollTo(0, 0), 120);
+}
+
 function openDialog(dialog) {
+  blurActiveControl();
   if (typeof dialog.showModal === "function") dialog.showModal();
   else dialog.setAttribute("open", "");
 }
 
 function closeDialog(dialog) {
+  blurActiveControl();
   if (typeof dialog.close === "function") dialog.close();
   else dialog.removeAttribute("open");
+  requestAnimationFrame(restoreMobileViewport);
 }
 
 function openTransferDialog(preselectedUserId = "") {
@@ -840,9 +956,15 @@ function createLedgerNotifications(entry) {
     return;
   }
 
+  if (entry.type === "reset-user") {
+    addNotification(entry.targetId, "\uc794\uc561 \ub9ac\uc14b", "\uc6b4\uc601\uc790\ub2d8\uc774 \uc9c0\uac11\uc744 0\uc73c\ub85c \ubcc0\uacbd\ud588\uc2b5\ub2c8\ub2e4.", entry.createdAt);
+    addNotification("admin", "\uc0ac\uc6a9\uc790 \uc794\uc561 \ub9ac\uc14b", `${entry.targetName} - ${formatAmount(0)}`, entry.createdAt);
+    return;
+  }
+
   if (entry.type === "reset") {
     state.users.filter((user) => !isSecretOperator(user)).forEach((user) => addNotification(user.id, "\ud06c\ub808\ub527 \ub9ac\uc14b", "\uc6b4\uc601\uc790\ub2d8\uc774 \uc9c0\uac11\uc744 \ub9ac\uc14b\ud588\uc2b5\ub2c8\ub2e4.", entry.createdAt));
-    addNotification("admin", "\ud06c\ub808\ub527 \ub9ac\uc14b", "\ubaa8\ub4e0 \uc9c0\uac11\uc774 0\uc6d0\uc73c\ub85c \ubcc0\uacbd\ub418\uc5c8\uc2b5\ub2c8\ub2e4.", entry.createdAt);
+    addNotification("admin", "\ud06c\ub808\ub527 \ub9ac\uc14b", "\ubaa8\ub4e0 \uc9c0\uac11\uc774 0\uc73c\ub85c \ubcc0\uacbd\ub418\uc5c8\uc2b5\ub2c8\ub2e4.", entry.createdAt);
   }
 }
 
@@ -870,7 +992,8 @@ function toastForLedger(entry) {
   }
 
   if (entry.type === "delete") showToast("\uc0ac\uc6a9\uc790 \uc0ad\uc81c", entryName(entry, "targetName", "targetId"));
-  if (entry.type === "reset") showToast("\ud06c\ub808\ub527 \ub9ac\uc14b", "\ubaa8\ub4e0 \uc9c0\uac11\uc774 0\uc6d0\uc73c\ub85c \ubcc0\uacbd\ub418\uc5c8\uc2b5\ub2c8\ub2e4.");
+  if (entry.type === "reset-user") showToast("\uc794\uc561 \ub9ac\uc14b", `${entryName(entry, "targetName", "targetId")} - ${formatAmount(0)}`);
+  if (entry.type === "reset") showToast("\ud06c\ub808\ub527 \ub9ac\uc14b", "\ubaa8\ub4e0 \uc9c0\uac11\uc774 0\uc73c\ub85c \ubcc0\uacbd\ub418\uc5c8\uc2b5\ub2c8\ub2e4.");
 }
 
 function showToast(title, body) {
@@ -1096,6 +1219,19 @@ function resetCredits() {
   addLedger({ type: "reset", operatorId: operator.id, amount: 0, memo: "reset" });
 }
 
+function resetUserCredits(targetId) {
+  const operator = currentUser();
+  const target = getUser(targetId);
+  if (!operator?.isAdmin || !target || isSecretOperator(target)) return;
+  const confirmed = window.confirm(`Reset ${target.name} balance to 0?`);
+  if (!confirmed) return;
+
+  target.balance = 0;
+  target.lastActive = Date.now();
+  operator.lastActive = Date.now();
+  addLedger({ type: "reset-user", operatorId: operator.id, targetId: target.id, amount: 0, memo: "balance reset" });
+}
+
 function deleteUser(targetId) {
   const operator = currentUser();
   const target = getUser(targetId);
@@ -1152,6 +1288,7 @@ async function handleAuth(event) {
       alias: "",
       pinHash,
       photo: "",
+      emoji: emojiForUser({ id: name, name }),
       balance: 0,
       isAdmin: false,
       createdAt: Date.now(),
@@ -1417,11 +1554,7 @@ function bindEvents() {
   els.clearChatButton.addEventListener("click", clearChats);
 
   els.markReadButton.addEventListener("click", () => {
-    const user = currentUser();
-    if (!user) return;
-    state.notifications = state.notifications.filter((notice) => !(notice.userId === user.id || (user.isAdmin && notice.userId === "admin")));
-    persist();
-    renderAlerts(user);
+    closeOpenAlerts();
   });
 
   els.profileForm.addEventListener("submit", handleProfileSave);
@@ -1467,7 +1600,7 @@ async function init() {
   renderAll();
 
   if ("serviceWorker" in navigator && location.protocol !== "file:") {
-    navigator.serviceWorker.register("./sw.js?v=3").catch(() => {});
+    navigator.serviceWorker.register("./sw.js?v=4").catch(() => {});
   }
 }
 
