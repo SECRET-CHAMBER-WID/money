@@ -6,7 +6,7 @@
 
 - Member login with name and 4-digit code
 - Fixed operator account: `&#50948;&#46300; / 4001`
-- Korean won mode and fantasy coin mode: gold, silver, copper
+- Korean won mode and fantasy coin mode: gold, silver
 - Send-only member transfers
 - Operator wallet view, member ranking, manual `+ / -` adjustment, member delete, seed capital button, and reset
 - Realtime alerts, notification tab, ledger, chat, and profile photo upload

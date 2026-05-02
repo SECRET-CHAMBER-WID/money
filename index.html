@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#e6ecf2" />
     <title>Secret Chamber Credits</title>
     <link rel="manifest" href="./manifest.json" />
-    <link rel="stylesheet" href="./styles.css?v=6" />
+    <link rel="stylesheet" href="./styles.css?v=7" />
   </head>
   <body>
     <svg class="icon-defs" aria-hidden="true">
@@ -143,6 +143,13 @@
       </section>
 
       <section id="chatTab" class="screen screen-chat" aria-labelledby="chatLabel">
+        <div class="section-heading chat-heading">
+          <div>
+            <p class="eyebrow">Chat</p>
+            <h2>&#52292;&#54021;</h2>
+          </div>
+          <button id="clearChatButton" class="soft-button" type="button">&#51204;&#52404; &#49325;&#51228;</button>
+        </div>
         <div id="chatList" class="chat-list"></div>
         <form id="chatForm" class="chat-composer">
           <input id="chatInput" maxlength="160" placeholder="Message" required />
@@ -272,6 +279,6 @@
       </div>
     </template>
 
-    <script src="./app.js?v=6" defer></script>
+    <script src="./app.js?v=7" defer></script>
   </body>
 </html>

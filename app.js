@@ -5,12 +5,11 @@ const GITHUB_SYNC_KEY = "secret-chamber-credits-github-sync";
 const ADMIN_NAME = "\uc704\ub4dc";
 const ADMIN_PIN = "4001";
 const ADMIN_ID = "operator-with-4001";
-const VERSION = 5;
+const VERSION = 6;
 
 const COINS = [
   { key: "gold", label: "\uae08\ud654", short: "G", value: 10000, emoji: "\uD83D\uDFE1" },
-  { key: "silver", label: "\uc740\ud654", short: "S", value: 1000, emoji: "\u26AA" },
-  { key: "copper", label: "coin", short: "C", value: 1, emoji: "\uD83E\uDE99" },
+  { key: "silver", label: "\uc740\ud654", short: "S", value: 1, emoji: "\u26AA" },
 ];
 
 const COLORS = ["#607d9c", "#56b7a9", "#d8b85f", "#c96f7d", "#59616d", "#4f8fbd", "#6b9a72", "#be7b56"];
@@ -74,6 +73,7 @@ const els = {
   chatList: $("#chatList"),
   chatForm: $("#chatForm"),
   chatInput: $("#chatInput"),
+  clearChatButton: $("#clearChatButton"),
   alertList: $("#alertList"),
   markReadButton: $("#markReadButton"),
   unreadDot: $("#unreadDot"),
@@ -269,7 +269,7 @@ function formatAmount(amount, mode = ui.currency) {
   if (mode === "coin") {
     return coinParts(value).map((part) => `${part.emoji} ${part.count.toLocaleString("ko-KR")} ${part.label}`).join("  ");
   }
-  return `${value.toLocaleString("ko-KR")}\uc6d0`;
+  return `\uc6d0\ud654 ${value.toLocaleString("ko-KR")}\uc6d0`;
 }
 
 function coinParts(amount) {
@@ -303,7 +303,7 @@ function renderAmountInto(element, amount) {
     count.textContent = part.count.toLocaleString("ko-KR");
 
     const unit = document.createElement("small");
-    unit.className = `coin-unit${part.key === "copper" ? " is-coin" : ""}`;
+    unit.className = "coin-unit";
     unit.textContent = part.label;
 
     item.append(emoji, count, unit);
@@ -357,7 +357,7 @@ function renderAmountFields(container, amount = 0, options = {}) {
   const maxCoins = maxAmount === null ? [] : splitCoins(maxAmount);
   splitCoins(amount).forEach((coin, index) => {
     const label = document.createElement("label");
-    label.textContent = `${coin.emoji} ${coin.key === "copper" ? "coin" : `${coin.label} (${coin.short})`}`;
+    label.textContent = `${coin.emoji} ${coin.label} (${coin.short})`;
     const input = document.createElement("input");
     input.type = "number";
     input.inputMode = "numeric";
@@ -622,6 +622,7 @@ function entryTouchesUser(entry, userId) {
 function renderChat(user) {
   els.chatList.textContent = "";
   const chats = state.chats.slice(-80);
+  if (els.clearChatButton) els.clearChatButton.disabled = chats.length === 0;
   if (!chats.length) {
     els.chatList.append(emptyState("\ucc44\ud305\uc774 \uc5c6\uc2b5\ub2c8\ub2e4"));
     return;
@@ -642,6 +643,17 @@ function renderChat(user) {
     bubble.append(header, p);
     els.chatList.append(bubble);
   });
+}
+
+function clearChats() {
+  const user = currentUser();
+  if (!user || !state.chats.length) return;
+  const confirmed = window.confirm("Delete all chat messages?");
+  if (!confirmed) return;
+  state.chats = [];
+  persist();
+  renderChat(user);
+  showToast("Chat", "All messages deleted.");
 }
 
 function notificationsFor(user) {
@@ -1377,6 +1389,8 @@ function bindEvents() {
     renderChat(user);
     requestAnimationFrame(scrollActiveScreenToBottom);
   });
+
+  els.clearChatButton.addEventListener("click", clearChats);
 
   els.markReadButton.addEventListener("click", () => {
     const user = currentUser();
