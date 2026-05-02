@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#e6ecf2" />
     <title>Secret Chamber Credits</title>
     <link rel="manifest" href="./manifest.json" />
-    <link rel="stylesheet" href="./styles.css?v=4" />
+    <link rel="stylesheet" href="./styles.css?v=5" />
   </head>
   <body>
     <svg class="icon-defs" aria-hidden="true">
@@ -55,7 +55,6 @@
     <main id="authView" class="auth-view">
       <section class="auth-panel">
         <div class="brand-mark">SCC</div>
-        <p class="eyebrow">GitHub shared wallet</p>
         <h1>Secret Chamber Credits</h1>
         <form id="authForm" class="auth-form">
           <label>
@@ -119,46 +118,6 @@
             <div id="seedAmountFields" class="amount-fields compact"></div>
             <button id="seedButton" class="primary-button" type="button">&#52488;&#44592; &#51088;&#48376; &#51648;&#44553;</button>
           </div>
-          <section class="github-sync-panel">
-            <div class="section-heading sync-heading">
-              <div>
-                <p class="eyebrow">GitHub Sync</p>
-                <h2>&#51088;&#46041; &#50629;&#47196;&#46300;</h2>
-              </div>
-              <span id="githubSyncStatus" class="sync-status">Off</span>
-            </div>
-            <div class="sync-grid">
-              <label>
-                Owner
-                <input id="githubOwner" autocomplete="off" />
-              </label>
-              <label>
-                Repo
-                <input id="githubRepo" autocomplete="off" />
-              </label>
-              <label>
-                Branch
-                <input id="githubBranch" autocomplete="off" />
-              </label>
-              <label>
-                Path
-                <input id="githubPath" autocomplete="off" />
-              </label>
-            </div>
-            <label>
-              Token
-              <input id="githubToken" type="password" autocomplete="off" />
-            </label>
-            <label class="toggle-row">
-              <input id="githubAutoSync" type="checkbox" />
-              <span>Auto</span>
-            </label>
-            <div class="sync-buttons">
-              <button id="githubSaveConfig" class="soft-button" type="button">Save</button>
-              <button id="githubPullButton" class="soft-button" type="button">Pull</button>
-              <button id="githubPushButton" class="primary-button" type="button">Push</button>
-            </div>
-          </section>
         </section>
 
         <div class="section-heading people-heading">
@@ -313,6 +272,6 @@
       </div>
     </template>
 
-    <script src="./app.js?v=4" defer></script>
+    <script src="./app.js?v=5" defer></script>
   </body>
 </html>

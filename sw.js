@@ -1,4 +1,4 @@
-const CACHE_NAME = "secret-chamber-credits-v4";
+const CACHE_NAME = "secret-chamber-credits-v5";
 const ASSETS = [
   "./",
   "./index.html",

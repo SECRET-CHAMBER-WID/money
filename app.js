@@ -5,12 +5,12 @@ const GITHUB_SYNC_KEY = "secret-chamber-credits-github-sync";
 const ADMIN_NAME = "\uc704\ub4dc";
 const ADMIN_PIN = "4001";
 const ADMIN_ID = "operator-with-4001";
-const VERSION = 3;
+const VERSION = 4;
 
 const COINS = [
   { key: "gold", label: "\uae08\ud654", short: "G", value: 10000 },
   { key: "silver", label: "\uc740\ud654", short: "S", value: 1000 },
-  { key: "copper", label: "\ub3d9\ud654", short: "C", value: 1 },
+  { key: "copper", label: "coin", short: "C", value: 1 },
 ];
 
 const COLORS = ["#607d9c", "#56b7a9", "#d8b85f", "#c96f7d", "#59616d", "#4f8fbd", "#6b9a72", "#be7b56"];
@@ -300,8 +300,9 @@ function splitCoins(amount) {
   });
 }
 
-function renderAmountFields(container, amount = 0) {
+function renderAmountFields(container, amount = 0, options = {}) {
   container.textContent = "";
+  const maxAmount = Number.isFinite(options.maxAmount) ? Math.max(0, Math.round(options.maxAmount)) : null;
   if (ui.currency === "krw") {
     const label = document.createElement("label");
     label.textContent = "\uae08\uc561";
@@ -310,7 +311,8 @@ function renderAmountFields(container, amount = 0) {
     input.inputMode = "numeric";
     input.min = "1";
     input.step = "1";
-    input.placeholder = "0";
+    input.placeholder = maxAmount === null ? "0" : `0 ~ ${formatAmount(maxAmount, "krw")}`;
+    if (maxAmount !== null) input.max = String(maxAmount);
     input.value = amount > 0 ? String(Math.round(amount)) : "";
     input.dataset.amount = "krw";
     label.append(input);
@@ -320,15 +322,17 @@ function renderAmountFields(container, amount = 0) {
 
   const grid = document.createElement("div");
   grid.className = "coin-grid";
-  splitCoins(amount).forEach((coin) => {
+  const maxCoins = maxAmount === null ? [] : splitCoins(maxAmount);
+  splitCoins(amount).forEach((coin, index) => {
     const label = document.createElement("label");
-    label.textContent = `${coin.label} (${coin.short})`;
+    label.textContent = coin.key === "copper" ? "coin" : `${coin.label} (${coin.short})`;
     const input = document.createElement("input");
     input.type = "number";
     input.inputMode = "numeric";
     input.min = "0";
     input.step = "1";
-    input.placeholder = "0";
+    input.placeholder = maxAmount === null ? "0" : `0 ~ ${maxCoins[index]?.count || 0}`;
+    if (maxAmount !== null) input.max = String(maxCoins[index]?.count || 0);
     input.value = coin.count ? String(coin.count) : "";
     input.dataset.coin = coin.key;
     label.append(input);
@@ -440,6 +444,12 @@ function visibleUsers() {
     return (b.lastActive || b.createdAt || 0) - (a.lastActive || a.createdAt || 0);
   });
 
+  const myIndex = users.findIndex((user) => user.id === currentUserId);
+  if (myIndex > 0) {
+    const [me] = users.splice(myIndex, 1);
+    users.unshift(me);
+  }
+
   return users;
 }
 
@@ -453,7 +463,7 @@ function renderPeople(user) {
 
   users.forEach((person, index) => {
     const card = document.createElement("article");
-    card.className = "person-card";
+    card.className = `person-card${person.id === user.id ? " is-me" : ""}`;
 
     const avatar = document.createElement("div");
     avatar.className = "avatar";
@@ -476,7 +486,7 @@ function renderPeople(user) {
 
     const balance = document.createElement("span");
     balance.className = "person-balance";
-    balance.textContent = user.isAdmin || person.id === user.id ? formatAmount(person.balance) : "\uc1a1\uae08 \uac00\ub2a5";
+    balance.textContent = formatAmount(person.balance);
     main.append(balance);
 
     const actions = document.createElement("div");
@@ -670,7 +680,7 @@ function openTransferDialog(preselectedUserId = "") {
   els.transferError.textContent = "";
   els.transferMemo.value = "";
   renderRecipientOptions(preselectedUserId);
-  renderAmountFields(els.transferAmountFields);
+  renderAmountFields(els.transferAmountFields, 0, { maxAmount: user.balance || 0 });
   els.transferTitle.textContent = "\ud06c\ub808\ub527 \ubcf4\ub0b4\uae30";
   openDialog(els.transferDialog);
 }
@@ -801,9 +811,12 @@ function showToast(title, body) {
   toast.append(strong, p);
   els.toastRegion.append(toast);
   window.setTimeout(() => {
+    if (!toast.isConnected) return;
     toast.style.opacity = "0";
     toast.style.transform = "translateY(-8px)";
-    toast.addEventListener("transitionend", () => toast.remove(), { once: true });
+  }, 4800);
+  window.setTimeout(() => {
+    toast.remove();
   }, 5000);
 }
 
@@ -1236,7 +1249,7 @@ function bindEvents() {
       ui.currency = button.dataset.currency;
       saveUi();
       renderAll();
-      if (els.transferDialog.open) renderAmountFields(els.transferAmountFields);
+      if (els.transferDialog.open) renderAmountFields(els.transferAmountFields, 0, { maxAmount: currentUser()?.balance || 0 });
       if (els.manageDialog.open) renderAmountFields(els.manageAmountFields);
     });
   });
@@ -1282,30 +1295,32 @@ function bindEvents() {
 
   els.resetButton.addEventListener("click", resetCredits);
 
-  els.githubSaveConfig.addEventListener("click", () => {
-    updateGithubConfigFromFields();
-    showToast("GitHub Sync", githubConfigReady() ? "Saved." : "Saved, but token/config is incomplete.");
-  });
+  if (els.githubSaveConfig) {
+    els.githubSaveConfig.addEventListener("click", () => {
+      updateGithubConfigFromFields();
+      showToast("GitHub Sync", githubConfigReady() ? "Saved." : "Saved, but token/config is incomplete.");
+    });
 
-  els.githubAutoSync.addEventListener("change", () => {
-    updateGithubConfigFromFields();
-    if (githubSync.config.auto && githubConfigReady()) {
-      pushToGithub({ quiet: true });
-      showToast("GitHub Sync", "Auto upload is on.");
-    } else {
-      showToast("GitHub Sync", "Auto upload is off.");
-    }
-  });
+    els.githubAutoSync.addEventListener("change", () => {
+      updateGithubConfigFromFields();
+      if (githubSync.config.auto && githubConfigReady()) {
+        pushToGithub({ quiet: true });
+        showToast("GitHub Sync", "Auto upload is on.");
+      } else {
+        showToast("GitHub Sync", "Auto upload is off.");
+      }
+    });
 
-  els.githubPullButton.addEventListener("click", () => {
-    updateGithubConfigFromFields();
-    pullFromGithub();
-  });
+    els.githubPullButton.addEventListener("click", () => {
+      updateGithubConfigFromFields();
+      pullFromGithub();
+    });
 
-  els.githubPushButton.addEventListener("click", () => {
-    updateGithubConfigFromFields();
-    pushToGithub();
-  });
+    els.githubPushButton.addEventListener("click", () => {
+      updateGithubConfigFromFields();
+      pushToGithub();
+    });
+  }
 
   els.chatForm.addEventListener("submit", (event) => {
     event.preventDefault();

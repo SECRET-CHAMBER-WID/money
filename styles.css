@@ -147,6 +147,10 @@ input {
   padding: 0 15px;
 }
 
+input::placeholder {
+  color: rgba(124, 133, 146, 0.5);
+}
+
 select {
   appearance: none;
   padding: 0 34px 0 14px;
@@ -581,6 +585,12 @@ select:focus {
   gap: 13px;
   align-items: center;
   padding: 13px;
+}
+
+.person-card.is-me {
+  background: linear-gradient(145deg, #f3f7fa, #e0e8f0);
+  outline: 2px solid rgba(86, 183, 169, 0.36);
+  outline-offset: 2px;
 }
 
 .avatar {
