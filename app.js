@@ -5,7 +5,7 @@ const GITHUB_SYNC_KEY = "secret-chamber-credits-github-sync";
 const ADMIN_NAME = "\uc704\ub4dc";
 const ADMIN_PIN = "4001";
 const ADMIN_ID = "operator-with-4001";
-const VERSION = 6;
+const VERSION = 7;
 
 const COINS = [
   { key: "gold", label: "\uae08\ud654", short: "G", value: 10000, emoji: "\uD83D\uDFE1" },
@@ -246,6 +246,30 @@ function snapshotName(userId) {
   return displayName(getUser(userId));
 }
 
+function isSecretOperator(user) {
+  if (!user) return false;
+  return user.isAdmin || user.id === ADMIN_ID || comparableName(user.name) === comparableName(ADMIN_NAME);
+}
+
+function isSecretOperatorRef(userId, name = "") {
+  return userId === ADMIN_ID || comparableName(name) === comparableName(ADMIN_NAME) || isSecretOperator(getUser(userId));
+}
+
+function viewerCanSeeOperator() {
+  return Boolean(currentUser()?.isAdmin);
+}
+
+function publicName(userId, fallback = "") {
+  if (!viewerCanSeeOperator() && isSecretOperatorRef(userId, fallback)) return "\uc6b4\uc601\uc790";
+  return fallback || snapshotName(userId);
+}
+
+function scrubOperatorText(text) {
+  const value = String(text || "");
+  if (viewerCanSeeOperator()) return value;
+  return value.replaceAll(ADMIN_NAME, "\uc6b4\uc601\uc790");
+}
+
 function persist({ broadcast = true, remote = true } = {}) {
   state.updatedAt = Date.now();
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
@@ -467,7 +491,7 @@ function renderGithubSyncPanel() {
 
 function visibleUsers() {
   const term = comparableName(ui.search);
-  let users = state.users.filter((person) => !person.isAdmin);
+  let users = state.users.filter((person) => !isSecretOperator(person));
   if (term) users = users.filter((user) => comparableName(`${user.name} ${user.alias || ""}`).includes(term));
 
   users.sort((a, b) => {
@@ -591,7 +615,7 @@ function ledgerCard(entry) {
 }
 
 function entryName(entry, field, idField) {
-  return entry[field] || snapshotName(entry[idField]);
+  return publicName(entry[idField], entry[field] || snapshotName(entry[idField]));
 }
 
 function ledgerTitle(entry) {
@@ -633,7 +657,7 @@ function renderChat(user) {
     bubble.className = `chat-bubble${chat.userId === user.id ? " own" : ""}`;
     const header = document.createElement("header");
     const strong = document.createElement("strong");
-    strong.textContent = chat.userName || snapshotName(chat.userId);
+    strong.textContent = publicName(chat.userId, chat.userName || snapshotName(chat.userId));
     const time = document.createElement("time");
     time.dateTime = new Date(chat.createdAt).toISOString();
     time.textContent = formatTime(chat.createdAt);
@@ -675,13 +699,13 @@ function renderAlerts(user) {
     card.className = "timeline-card";
     const header = document.createElement("header");
     const strong = document.createElement("strong");
-    strong.textContent = alert.title;
+    strong.textContent = scrubOperatorText(alert.title);
     const time = document.createElement("time");
     time.dateTime = new Date(alert.createdAt).toISOString();
     time.textContent = formatTime(alert.createdAt);
     header.append(strong, time);
     const body = document.createElement("p");
-    body.textContent = alert.body;
+    body.textContent = scrubOperatorText(alert.body);
     card.append(header, body);
     els.alertList.append(card);
   });
@@ -738,7 +762,7 @@ function renderRecipientOptions(preselectedUserId = "") {
   const user = currentUser();
   els.recipientSelect.textContent = "";
   state.users
-    .filter((person) => person.id !== user.id && !person.isAdmin)
+    .filter((person) => person.id !== user.id && !isSecretOperator(person))
     .sort((a, b) => comparableName(a.name).localeCompare(comparableName(b.name), "ko-KR"))
     .forEach((person) => {
       const option = document.createElement("option");
@@ -799,7 +823,7 @@ function createLedgerNotifications(entry) {
   if (entry.type === "adjustment") {
     const sign = entry.direction === "subtract" ? "-" : "+";
     const amount = `${sign}${formatAmount(entry.amount)}`;
-    addNotification(entry.targetId, "\uae08\uc561 \uc870\uc815", `${entry.operatorName}\ub2d8\uc774 ${amount} \uc870\uc815\ud588\uc2b5\ub2c8\ub2e4.`, entry.createdAt);
+    addNotification(entry.targetId, "\uae08\uc561 \uc870\uc815", `\uc6b4\uc601\uc790\ub2d8\uc774 ${amount} \uc870\uc815\ud588\uc2b5\ub2c8\ub2e4.`, entry.createdAt);
     addNotification("admin", "\uad00\ub9ac\uc790 \uc870\uc815", `${entry.targetName} - ${amount}`, entry.createdAt);
     return;
   }
@@ -817,7 +841,7 @@ function createLedgerNotifications(entry) {
   }
 
   if (entry.type === "reset") {
-    state.users.forEach((user) => addNotification(user.id, "\ud06c\ub808\ub527 \ub9ac\uc14b", `${entry.operatorName}\ub2d8\uc774 \uc9c0\uac11\uc744 \ub9ac\uc14b\ud588\uc2b5\ub2c8\ub2e4.`, entry.createdAt));
+    state.users.filter((user) => !isSecretOperator(user)).forEach((user) => addNotification(user.id, "\ud06c\ub808\ub527 \ub9ac\uc14b", "\uc6b4\uc601\uc790\ub2d8\uc774 \uc9c0\uac11\uc744 \ub9ac\uc14b\ud588\uc2b5\ub2c8\ub2e4.", entry.createdAt));
     addNotification("admin", "\ud06c\ub808\ub527 \ub9ac\uc14b", "\ubaa8\ub4e0 \uc9c0\uac11\uc774 0\uc6d0\uc73c\ub85c \ubcc0\uacbd\ub418\uc5c8\uc2b5\ub2c8\ub2e4.", entry.createdAt);
   }
 }
@@ -836,16 +860,16 @@ function toastForLedger(entry) {
 
   if (entry.type === "adjustment") {
     const sign = entry.direction === "subtract" ? "-" : "+";
-    showToast("\uae08\uc561 \uc870\uc815", `${entry.targetName} - ${sign}${formatAmount(entry.amount)}`);
+    showToast("\uae08\uc561 \uc870\uc815", `${entryName(entry, "targetName", "targetId")} - ${sign}${formatAmount(entry.amount)}`);
     return;
   }
 
   if (entry.type === "seed") {
-    showToast("\ucd08\uae30 \uc790\ubcf8 \uc9c0\uae09", `${entry.targetName} - ${formatAmount(entry.amount)}`);
+    showToast("\ucd08\uae30 \uc790\ubcf8 \uc9c0\uae09", `${entryName(entry, "targetName", "targetId")} - ${formatAmount(entry.amount)}`);
     return;
   }
 
-  if (entry.type === "delete") showToast("\uc0ac\uc6a9\uc790 \uc0ad\uc81c", entry.targetName);
+  if (entry.type === "delete") showToast("\uc0ac\uc6a9\uc790 \uc0ad\uc81c", entryName(entry, "targetName", "targetId"));
   if (entry.type === "reset") showToast("\ud06c\ub808\ub527 \ub9ac\uc14b", "\ubaa8\ub4e0 \uc9c0\uac11\uc774 0\uc6d0\uc73c\ub85c \ubcc0\uacbd\ub418\uc5c8\uc2b5\ub2c8\ub2e4.");
 }
 
@@ -1038,7 +1062,7 @@ function seedCapital(amount) {
   const operator = currentUser();
   if (!operator?.isAdmin) return "Operator only.";
   if (!Number.isFinite(amount) || amount <= 0) return "\ucd08\uae30 \uc790\ubcf8\uc744 \uc785\ub825\ud574\uc8fc\uc138\uc694.";
-  const targets = state.users.filter((user) => !user.isAdmin);
+  const targets = state.users.filter((user) => !isSecretOperator(user));
   if (!targets.length) return "\uc9c0\uae09\ud560 \uc0ac\uc6a9\uc790\uac00 \uc5c6\uc2b5\ub2c8\ub2e4.";
 
   state.settings.seedAmount = amount;
@@ -1075,7 +1099,7 @@ function resetCredits() {
 function deleteUser(targetId) {
   const operator = currentUser();
   const target = getUser(targetId);
-  if (!operator?.isAdmin || !target || target.isAdmin) return;
+  if (!operator?.isAdmin || !target || isSecretOperator(target)) return;
   const confirmed = window.confirm(`Delete ${target.name}?`);
   if (!confirmed) return;
 
