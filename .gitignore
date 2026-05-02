@@ -1,4 +1,3 @@
 .github-sync/
 .git-upload.log
-firebase-config.js
 *.local

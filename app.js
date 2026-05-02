@@ -1193,7 +1193,12 @@ async function initRemoteSync() {
     ]);
     const { getDatabase, ref, get, set, onValue } = databaseModule;
     const app = initializeApp(configModule.firebaseConfig);
-    const database = getDatabase(app);
+    const projectId = configModule.firebaseConfig.projectId;
+    const databaseURL =
+      configModule.firebaseConfig.databaseURL ||
+      configModule.databaseURL ||
+      (projectId ? `https://${projectId}-default-rtdb.firebaseio.com` : "");
+    const database = databaseURL ? getDatabase(app, databaseURL) : getDatabase(app);
     const databasePath = configModule.databasePath || "secret-chamber-credits/state";
     const stateRef = ref(database, databasePath);
 

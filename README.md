@@ -43,6 +43,29 @@ GitHub Pages is static hosting, so shared realtime data needs a database. This a
 The app works without Firebase, but data is then stored only in the current browser.
 For sync across different phones, `firebase-config.js` must exist in the repository root and Firebase Realtime Database rules must allow your group to read and write the configured path.
 
+The current Firebase config points to:
+
+```text
+https://scc-money-default-rtdb.firebaseio.com
+```
+
+If your Firebase Realtime Database uses another region URL, update `databaseURL` in `firebase-config.js`.
+
+For quick testing, the Realtime Database rules can be:
+
+```json
+{
+  "rules": {
+    "secret-chamber-credits": {
+      ".read": true,
+      ".write": true
+    }
+  }
+}
+```
+
+These rules are open to anyone who has the app URL, so tighten them later if the wallet becomes private or sensitive.
+
 ## GitHub Folder Auto Upload
 
 The operator screen includes a GitHub Sync panel. It can upload the current credit state to:

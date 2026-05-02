@@ -44,6 +44,7 @@ $Files = @(
   "manifest.json",
   "icon.svg",
   "README.md",
+  "firebase-config.js",
   "firebase-config.example.js",
   ".gitignore",
   "sync-to-github.ps1",
