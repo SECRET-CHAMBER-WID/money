@@ -5,12 +5,12 @@ const GITHUB_SYNC_KEY = "secret-chamber-credits-github-sync";
 const ADMIN_NAME = "\uc704\ub4dc";
 const ADMIN_PIN = "4001";
 const ADMIN_ID = "operator-with-4001";
-const VERSION = 4;
+const VERSION = 5;
 
 const COINS = [
-  { key: "gold", label: "\uae08\ud654", short: "G", value: 10000 },
-  { key: "silver", label: "\uc740\ud654", short: "S", value: 1000 },
-  { key: "copper", label: "coin", short: "C", value: 1 },
+  { key: "gold", label: "\uae08\ud654", short: "G", value: 10000, emoji: "\uD83D\uDFE1" },
+  { key: "silver", label: "\uc740\ud654", short: "S", value: 1000, emoji: "\u26AA" },
+  { key: "copper", label: "coin", short: "C", value: 1, emoji: "\uD83E\uDE99" },
 ];
 
 const COLORS = ["#607d9c", "#56b7a9", "#d8b85f", "#c96f7d", "#59616d", "#4f8fbd", "#6b9a72", "#be7b56"];
@@ -267,16 +267,48 @@ function showAuth() {
 function formatAmount(amount, mode = ui.currency) {
   const value = Math.max(0, Math.round(Number(amount) || 0));
   if (mode === "coin") {
-    let rest = value;
-    const parts = [];
-    COINS.forEach((coin) => {
-      const count = Math.floor(rest / coin.value);
-      rest %= coin.value;
-      if (count > 0) parts.push(`${count.toLocaleString("ko-KR")} ${coin.label}`);
-    });
-    return parts.length ? parts.join(" ") : `0 ${COINS[COINS.length - 1].label}`;
+    return coinParts(value).map((part) => `${part.emoji} ${part.count.toLocaleString("ko-KR")} ${part.label}`).join("  ");
   }
   return `${value.toLocaleString("ko-KR")}\uc6d0`;
+}
+
+function coinParts(amount) {
+  let rest = Math.max(0, Math.round(Number(amount) || 0));
+  const parts = [];
+  COINS.forEach((coin) => {
+    const count = Math.floor(rest / coin.value);
+    rest %= coin.value;
+    if (count > 0) parts.push({ ...coin, count });
+  });
+  return parts.length ? parts : [{ ...COINS[COINS.length - 1], count: 0 }];
+}
+
+function renderAmountInto(element, amount) {
+  element.textContent = "";
+  element.classList.toggle("coin-amount", ui.currency === "coin");
+  if (ui.currency !== "coin") {
+    element.textContent = formatAmount(amount);
+    return;
+  }
+
+  coinParts(amount).forEach((part) => {
+    const item = document.createElement("span");
+    item.className = "coin-part";
+
+    const emoji = document.createElement("span");
+    emoji.className = "coin-emoji";
+    emoji.textContent = part.emoji;
+
+    const count = document.createElement("span");
+    count.textContent = part.count.toLocaleString("ko-KR");
+
+    const unit = document.createElement("small");
+    unit.className = `coin-unit${part.key === "copper" ? " is-coin" : ""}`;
+    unit.textContent = part.label;
+
+    item.append(emoji, count, unit);
+    element.append(item);
+  });
 }
 
 function parseAmount(container) {
@@ -325,7 +357,7 @@ function renderAmountFields(container, amount = 0, options = {}) {
   const maxCoins = maxAmount === null ? [] : splitCoins(maxAmount);
   splitCoins(amount).forEach((coin, index) => {
     const label = document.createElement("label");
-    label.textContent = coin.key === "copper" ? "coin" : `${coin.label} (${coin.short})`;
+    label.textContent = `${coin.emoji} ${coin.key === "copper" ? "coin" : `${coin.label} (${coin.short})`}`;
     const input = document.createElement("input");
     input.type = "number";
     input.inputMode = "numeric";
@@ -408,7 +440,7 @@ function renderHeader(user) {
 }
 
 function renderHome(user) {
-  els.walletBalance.textContent = formatAmount(user.balance);
+  renderAmountInto(els.walletBalance, user.balance);
   els.roleBadge.textContent = user.isAdmin ? "Operator" : "Member";
   els.roleBadge.classList.toggle("operator", user.isAdmin);
   els.adminPanel.classList.toggle("is-hidden", !user.isAdmin);
@@ -435,7 +467,7 @@ function renderGithubSyncPanel() {
 
 function visibleUsers() {
   const term = comparableName(ui.search);
-  let users = [...state.users];
+  let users = state.users.filter((person) => !person.isAdmin);
   if (term) users = users.filter((user) => comparableName(`${user.name} ${user.alias || ""}`).includes(term));
 
   users.sort((a, b) => {
@@ -486,7 +518,7 @@ function renderPeople(user) {
 
     const balance = document.createElement("span");
     balance.className = "person-balance";
-    balance.textContent = formatAmount(person.balance);
+    renderAmountInto(balance, person.balance);
     main.append(balance);
 
     const actions = document.createElement("div");
@@ -661,7 +693,12 @@ function setTab(tab) {
   ui.tab = tab;
   saveUi();
   renderActiveTab();
-  if (tab === "chat") requestAnimationFrame(() => window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" }));
+  if (tab === "chat") requestAnimationFrame(scrollActiveScreenToBottom);
+}
+
+function scrollActiveScreenToBottom() {
+  const screen = document.querySelector(".screen.is-active");
+  if (screen) screen.scrollTo({ top: screen.scrollHeight, behavior: "smooth" });
 }
 
 function openDialog(dialog) {
@@ -689,7 +726,7 @@ function renderRecipientOptions(preselectedUserId = "") {
   const user = currentUser();
   els.recipientSelect.textContent = "";
   state.users
-    .filter((person) => person.id !== user.id)
+    .filter((person) => person.id !== user.id && !person.isAdmin)
     .sort((a, b) => comparableName(a.name).localeCompare(comparableName(b.name), "ko-KR"))
     .forEach((person) => {
       const option = document.createElement("option");
@@ -1338,7 +1375,7 @@ function bindEvents() {
     els.chatInput.value = "";
     persist();
     renderChat(user);
-    requestAnimationFrame(() => window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" }));
+    requestAnimationFrame(scrollActiveScreenToBottom);
   });
 
   els.markReadButton.addEventListener("click", () => {
