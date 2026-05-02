@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#e6ecf2" />
     <title>Secret Chamber Credits</title>
     <link rel="manifest" href="./manifest.json" />
-    <link rel="stylesheet" href="./styles.css" />
+    <link rel="stylesheet" href="./styles.css?v=4" />
   </head>
   <body>
     <svg class="icon-defs" aria-hidden="true">
@@ -59,14 +59,14 @@
         <h1>Secret Chamber Credits</h1>
         <form id="authForm" class="auth-form">
           <label>
-            이름
+            &#51060;&#47492;
             <input id="authName" autocomplete="name" maxlength="18" required />
           </label>
           <label>
-            인증번호 4자리
+            &#51064;&#51613;&#48264;&#54840; 4&#51088;&#47532;
             <input id="authPin" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" autocomplete="current-password" required />
           </label>
-          <button class="primary-button" type="submit">입장</button>
+          <button class="primary-button" type="submit">&#51077;&#51109;</button>
           <p id="authError" class="form-error" role="alert"></p>
         </form>
       </section>
@@ -79,16 +79,16 @@
             <p id="welcomeText" class="hero-kicker">Secret Chamber Credits</p>
             <h1 id="heroName">Wallet</h1>
           </div>
-          <button id="profileShortcut" class="avatar-button" type="button" aria-label="프로필 열기"></button>
+          <button id="profileShortcut" class="avatar-button" type="button" aria-label="Open profile"></button>
         </section>
         <div class="utility-row">
-          <label class="search-box" aria-label="이름 검색">
+          <label class="search-box" aria-label="Search members">
             <svg><use href="#icon-search"></use></svg>
-            <input id="searchInput" type="search" placeholder="이름 검색" />
+            <input id="searchInput" type="search" placeholder="&#51060;&#47492; &#44160;&#49353;" />
           </label>
-          <div class="currency-switch" role="group" aria-label="통화 선택">
-            <button id="krwMode" type="button" data-currency="krw" class="is-active">₩</button>
-            <button id="coinMode" type="button" data-currency="coin">G/S/C/T</button>
+          <div class="currency-switch" role="group" aria-label="Currency">
+            <button id="krwMode" type="button" data-currency="krw" class="is-active">&#50896;</button>
+            <button id="coinMode" type="button" data-currency="coin">&#53076;&#51064;</button>
           </div>
         </div>
       </header>
@@ -98,9 +98,9 @@
           <div class="wallet-copy">
             <span id="roleBadge" class="status-pill">Member</span>
             <p>My Wallet</p>
-            <strong id="walletBalance">₩0</strong>
+            <strong id="walletBalance">0</strong>
           </div>
-          <button id="walletSendButton" class="round-action" type="button" aria-label="송금하기">
+          <button id="walletSendButton" class="round-action" type="button" aria-label="Transfer">
             <svg><use href="#icon-send"></use></svg>
           </button>
         </div>
@@ -109,27 +109,67 @@
           <div class="section-heading">
             <div>
               <p class="eyebrow">Operator</p>
-              <h2>관리자 콘솔</h2>
+              <h2>&#44288;&#47532;&#51088; Console</h2>
             </div>
-            <button id="resetButton" class="icon-button danger" type="button" aria-label="크레딧 리셋">
+            <button id="resetButton" class="icon-button danger" type="button" aria-label="Reset credits">
               <svg><use href="#icon-trash"></use></svg>
             </button>
           </div>
           <div class="admin-actions">
             <div id="seedAmountFields" class="amount-fields compact"></div>
-            <button id="seedButton" class="primary-button" type="button">초기 자본 지급</button>
+            <button id="seedButton" class="primary-button" type="button">&#52488;&#44592; &#51088;&#48376; &#51648;&#44553;</button>
           </div>
+          <section class="github-sync-panel">
+            <div class="section-heading sync-heading">
+              <div>
+                <p class="eyebrow">GitHub Sync</p>
+                <h2>&#51088;&#46041; &#50629;&#47196;&#46300;</h2>
+              </div>
+              <span id="githubSyncStatus" class="sync-status">Off</span>
+            </div>
+            <div class="sync-grid">
+              <label>
+                Owner
+                <input id="githubOwner" autocomplete="off" />
+              </label>
+              <label>
+                Repo
+                <input id="githubRepo" autocomplete="off" />
+              </label>
+              <label>
+                Branch
+                <input id="githubBranch" autocomplete="off" />
+              </label>
+              <label>
+                Path
+                <input id="githubPath" autocomplete="off" />
+              </label>
+            </div>
+            <label>
+              Token
+              <input id="githubToken" type="password" autocomplete="off" />
+            </label>
+            <label class="toggle-row">
+              <input id="githubAutoSync" type="checkbox" />
+              <span>Auto</span>
+            </label>
+            <div class="sync-buttons">
+              <button id="githubSaveConfig" class="soft-button" type="button">Save</button>
+              <button id="githubPullButton" class="soft-button" type="button">Pull</button>
+              <button id="githubPushButton" class="primary-button" type="button">Push</button>
+            </div>
+          </section>
         </section>
 
         <div class="section-heading people-heading">
           <div>
             <p class="eyebrow">Live Members</p>
-            <h2>사용자 리스트</h2>
+            <h2>&#49324;&#50857;&#51088; &#47532;&#49828;&#53944;</h2>
           </div>
-          <select id="peopleFilter" aria-label="사용자 정렬">
-            <option value="recent">최근 활동</option>
-            <option value="name">이름순</option>
-            <option value="rank">금액 순위</option>
+          <select id="peopleFilter" aria-label="Sort members">
+            <option value="recent">Recent</option>
+            <option value="name">Name</option>
+            <option value="rank">Rank</option>
           </select>
         </div>
         <section id="peopleList" class="people-list"></section>
@@ -137,7 +177,7 @@
         <div class="section-heading">
           <div>
             <p class="eyebrow">Ledger</p>
-            <h2>이동 내역</h2>
+            <h2>&#51060;&#46041; &#45236;&#50669;</h2>
           </div>
         </div>
         <section id="ledgerList" class="timeline-list"></section>
@@ -146,8 +186,8 @@
       <section id="chatTab" class="screen screen-chat" aria-labelledby="chatLabel">
         <div id="chatList" class="chat-list"></div>
         <form id="chatForm" class="chat-composer">
-          <input id="chatInput" maxlength="160" placeholder="메시지" required />
-          <button class="icon-button dark" type="submit" aria-label="보내기">
+          <input id="chatInput" maxlength="160" placeholder="Message" required />
+          <button class="icon-button dark" type="submit" aria-label="Send">
             <svg><use href="#icon-send"></use></svg>
           </button>
         </form>
@@ -157,9 +197,9 @@
         <div class="section-heading">
           <div>
             <p class="eyebrow">Updates</p>
-            <h2>알림</h2>
+            <h2>&#50508;&#47548;</h2>
           </div>
-          <button id="markReadButton" class="soft-button" type="button">모두 읽음</button>
+          <button id="markReadButton" class="soft-button" type="button">&#47784;&#46160; &#51069;&#51020;</button>
         </div>
         <section id="alertList" class="timeline-list"></section>
       </section>
@@ -167,55 +207,51 @@
       <section id="profileTab" class="screen" aria-labelledby="profileLabel">
         <section class="profile-panel">
           <div class="profile-photo-row">
-            <button id="profilePhotoButton" class="profile-photo" type="button" aria-label="프로필 사진 변경"></button>
+            <button id="profilePhotoButton" class="profile-photo" type="button" aria-label="Change photo"></button>
             <label class="soft-button file-trigger">
               <svg><use href="#icon-camera"></use></svg>
-              사진
+              &#49324;&#51652;
               <input id="photoInput" type="file" accept="image/*" />
             </label>
           </div>
           <form id="profileForm" class="profile-form">
             <label>
-              이름
+              &#51060;&#47492;
               <input id="profileName" maxlength="18" required />
             </label>
             <label>
-              별명
+              &#48324;&#47749;
               <input id="profileAlias" maxlength="24" />
             </label>
-            <div>
-              <p class="field-title">아이콘</p>
-              <div id="iconPicker" class="icon-picker"></div>
-            </div>
-            <button class="primary-button" type="submit">프로필 저장</button>
-            <button id="logoutButton" class="soft-button full" type="button">로그아웃</button>
+            <button class="primary-button" type="submit">&#54532;&#47196;&#54596; &#51200;&#51109;</button>
+            <button id="logoutButton" class="soft-button full" type="button">Logout</button>
             <p id="profileError" class="form-error" role="alert"></p>
           </form>
         </section>
       </section>
 
-      <button id="fabButton" class="fab-button" type="button" aria-label="송금하기">
+      <button id="fabButton" class="fab-button" type="button" aria-label="Transfer">
         <svg><use href="#icon-plus"></use></svg>
       </button>
 
-      <nav class="bottom-nav" aria-label="하단 카테고리">
+      <nav class="bottom-nav" aria-label="Tabs">
         <button class="nav-item is-active" type="button" data-tab="home" id="homeLabel">
           <svg><use href="#icon-home"></use></svg>
-          홈
+          &#54856;
         </button>
         <button class="nav-item" type="button" data-tab="chat" id="chatLabel">
           <svg><use href="#icon-chat"></use></svg>
-          채팅
+          &#52292;&#54021;
         </button>
         <span class="nav-spacer" aria-hidden="true"></span>
         <button class="nav-item" type="button" data-tab="alerts" id="alertsLabel">
           <svg><use href="#icon-bell"></use></svg>
-          알림
+          &#50508;&#47548;
           <span id="unreadDot" class="unread-dot is-hidden"></span>
         </button>
         <button class="nav-item" type="button" data-tab="profile" id="profileLabel">
           <svg><use href="#icon-user"></use></svg>
-          프로필
+          &#54532;&#47196;&#54596;
         </button>
       </nav>
     </main>
@@ -225,22 +261,22 @@
         <div class="sheet-head">
           <div>
             <p class="eyebrow">Transfer</p>
-            <h2 id="transferTitle">크레딧 보내기</h2>
+            <h2 id="transferTitle">&#53356;&#47112;&#46367; &#48372;&#45236;&#44592;</h2>
           </div>
-          <button class="icon-button" value="cancel" type="button" data-close-dialog aria-label="닫기">
+          <button class="icon-button" value="cancel" type="button" data-close-dialog aria-label="Close">
             <svg><use href="#icon-x"></use></svg>
           </button>
         </div>
         <label>
-          받는 사람
+          &#48155;&#45716; &#49324;&#46988;
           <select id="recipientSelect" required></select>
         </label>
         <div id="transferAmountFields" class="amount-fields"></div>
         <label>
-          메모
-          <input id="transferMemo" maxlength="40" placeholder="선택" />
+          &#47700;&#47784;
+          <input id="transferMemo" maxlength="40" placeholder="Optional" />
         </label>
-        <button class="primary-button" type="submit">보내기</button>
+        <button class="primary-button" type="submit">&#48372;&#45236;&#44592;</button>
         <p id="transferError" class="form-error" role="alert"></p>
       </form>
     </dialog>
@@ -250,22 +286,22 @@
         <div class="sheet-head">
           <div>
             <p class="eyebrow">Adjust</p>
-            <h2 id="manageTitle">금액 조정</h2>
+            <h2 id="manageTitle">&#44552;&#50529; &#51312;&#51221;</h2>
           </div>
-          <button class="icon-button" value="cancel" type="button" data-close-dialog aria-label="닫기">
+          <button class="icon-button" value="cancel" type="button" data-close-dialog aria-label="Close">
             <svg><use href="#icon-x"></use></svg>
           </button>
         </div>
-        <div class="adjust-toggle" role="group" aria-label="조정 방식">
+        <div class="adjust-toggle" role="group" aria-label="Adjust mode">
           <button type="button" data-adjust="add" class="is-active">+</button>
           <button type="button" data-adjust="subtract">-</button>
         </div>
         <div id="manageAmountFields" class="amount-fields"></div>
         <label>
-          메모
-          <input id="manageMemo" maxlength="40" placeholder="선택" />
+          &#47700;&#47784;
+          <input id="manageMemo" maxlength="40" placeholder="Optional" />
         </label>
-        <button class="primary-button" type="submit">적용</button>
+        <button class="primary-button" type="submit">&#51201;&#50857;</button>
         <p id="manageError" class="form-error" role="alert"></p>
       </form>
     </dialog>
@@ -277,6 +313,6 @@
       </div>
     </template>
 
-    <script src="./app.js" defer></script>
+    <script src="./app.js?v=4" defer></script>
   </body>
 </html>

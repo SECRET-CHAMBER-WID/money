@@ -1,0 +1,11 @@
+{
+  "version": 3,
+  "users": [],
+  "ledger": [],
+  "notifications": [],
+  "chats": [],
+  "settings": {
+    "seedAmount": 100000
+  },
+  "updatedAt": 0
+}

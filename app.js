@@ -1,37 +1,33 @@
 const STORAGE_KEY = "secret-chamber-credits-state";
 const SESSION_KEY = "secret-chamber-credits-session";
 const UI_KEY = "secret-chamber-credits-ui";
-const ADMIN_NAME = "위드";
+const GITHUB_SYNC_KEY = "secret-chamber-credits-github-sync";
+const ADMIN_NAME = "\uc704\ub4dc";
 const ADMIN_PIN = "4001";
 const ADMIN_ID = "operator-with-4001";
-const VERSION = 1;
+const VERSION = 3;
 
 const COINS = [
-  { key: "gold", label: "금화", short: "G", value: 10000 },
-  { key: "silver", label: "은화", short: "S", value: 1000 },
-  { key: "copper", label: "동화", short: "C", value: 100 },
-  { key: "tin", label: "주석", short: "T", value: 1 },
+  { key: "gold", label: "\uae08\ud654", short: "G", value: 10000 },
+  { key: "silver", label: "\uc740\ud654", short: "S", value: 1000 },
+  { key: "copper", label: "\ub3d9\ud654", short: "C", value: 1 },
 ];
 
-const ICONS = [
-  { key: "onyx", symbol: "◆", color: "#607d9c" },
-  { key: "mint", symbol: "✦", color: "#56b7a9" },
-  { key: "gold", symbol: "●", color: "#d8b85f" },
-  { key: "rose", symbol: "✚", color: "#c96f7d" },
-  { key: "steel", symbol: "■", color: "#59616d" },
-  { key: "wave", symbol: "◒", color: "#4f8fbd" },
-  { key: "leaf", symbol: "✶", color: "#6b9a72" },
-  { key: "ember", symbol: "▲", color: "#be7b56" },
-  { key: "night", symbol: "✷", color: "#2f333a" },
-  { key: "clear", symbol: "◇", color: "#8a97a8" },
-];
-
+const COLORS = ["#607d9c", "#56b7a9", "#d8b85f", "#c96f7d", "#59616d", "#4f8fbd", "#6b9a72", "#be7b56"];
 const sourceId = crypto.randomUUID ? crypto.randomUUID() : String(Date.now());
 const channel = "BroadcastChannel" in window ? new BroadcastChannel("secret-chamber-credits") : null;
+
 const remoteSync = {
   enabled: false,
   applying: false,
   push: null,
+};
+
+const githubSync = {
+  config: loadGithubConfig(),
+  applying: false,
+  sha: "",
+  timer: null,
 };
 
 let state = null;
@@ -39,7 +35,6 @@ let currentUserId = localStorage.getItem(SESSION_KEY);
 let ui = loadUi();
 let selectedManageUserId = null;
 let adjustMode = "add";
-let selectedIconKey = ICONS[0].key;
 
 const $ = (selector) => document.querySelector(selector);
 
@@ -63,6 +58,16 @@ const els = {
   seedAmountFields: $("#seedAmountFields"),
   seedButton: $("#seedButton"),
   resetButton: $("#resetButton"),
+  githubOwner: $("#githubOwner"),
+  githubRepo: $("#githubRepo"),
+  githubBranch: $("#githubBranch"),
+  githubPath: $("#githubPath"),
+  githubToken: $("#githubToken"),
+  githubAutoSync: $("#githubAutoSync"),
+  githubSaveConfig: $("#githubSaveConfig"),
+  githubPullButton: $("#githubPullButton"),
+  githubPushButton: $("#githubPushButton"),
+  githubSyncStatus: $("#githubSyncStatus"),
   peopleFilter: $("#peopleFilter"),
   peopleList: $("#peopleList"),
   ledgerList: $("#ledgerList"),
@@ -78,7 +83,6 @@ const els = {
   profileName: $("#profileName"),
   profileAlias: $("#profileAlias"),
   profileError: $("#profileError"),
-  iconPicker: $("#iconPicker"),
   logoutButton: $("#logoutButton"),
   fabButton: $("#fabButton"),
   transferDialog: $("#transferDialog"),
@@ -116,6 +120,26 @@ function saveUi() {
   localStorage.setItem(UI_KEY, JSON.stringify(ui));
 }
 
+function loadGithubConfig() {
+  const defaults = {
+    owner: "SECRET-CHAMBER-WID",
+    repo: "money",
+    branch: "main",
+    path: "data/credits-state.json",
+    token: "",
+    auto: false,
+  };
+  try {
+    return { ...defaults, ...JSON.parse(localStorage.getItem(GITHUB_SYNC_KEY) || "{}") };
+  } catch {
+    return defaults;
+  }
+}
+
+function saveGithubConfig() {
+  localStorage.setItem(GITHUB_SYNC_KEY, JSON.stringify(githubSync.config));
+}
+
 function createDefaultState() {
   return {
     version: VERSION,
@@ -123,9 +147,7 @@ function createDefaultState() {
     ledger: [],
     notifications: [],
     chats: [],
-    settings: {
-      seedAmount: 100000,
-    },
+    settings: { seedAmount: 100000 },
     updatedAt: Date.now(),
   };
 }
@@ -142,11 +164,20 @@ function loadState() {
 function normalizeState(nextState) {
   const base = createDefaultState();
   const merged = { ...base, ...(nextState || {}) };
+  merged.version = VERSION;
   merged.users = Array.isArray(merged.users) ? merged.users : [];
   merged.ledger = Array.isArray(merged.ledger) ? merged.ledger : [];
   merged.notifications = Array.isArray(merged.notifications) ? merged.notifications : [];
   merged.chats = Array.isArray(merged.chats) ? merged.chats : [];
   merged.settings = { ...base.settings, ...(merged.settings || {}) };
+  merged.users.forEach((user) => {
+    user.name = normalizeName(user.name);
+    user.alias = normalizeName(user.alias || "");
+    user.photo = user.photo || "";
+    user.balance = Math.max(0, Math.round(Number(user.balance) || 0));
+    user.createdAt = Number(user.createdAt) || Date.now();
+    user.lastActive = Number(user.lastActive) || user.createdAt;
+  });
   return merged;
 }
 
@@ -159,7 +190,6 @@ async function ensureAdmin() {
       name: ADMIN_NAME,
       alias: "",
       pinHash: adminHash,
-      iconKey: "night",
       photo: "",
       balance: 0,
       isAdmin: true,
@@ -173,8 +203,7 @@ async function ensureAdmin() {
   admin.name = ADMIN_NAME;
   admin.pinHash = adminHash;
   admin.isAdmin = true;
-  admin.iconKey = admin.iconKey || "night";
-  admin.balance = Number.isFinite(admin.balance) ? Math.max(0, Math.round(admin.balance)) : 0;
+  admin.balance = Math.max(0, Math.round(Number(admin.balance) || 0));
 }
 
 async function hashPin(pin) {
@@ -208,24 +237,21 @@ function currentUser() {
   return getUser(currentUserId);
 }
 
-function getIcon(user) {
-  return ICONS.find((icon) => icon.key === user?.iconKey) || ICONS[0];
+function displayName(user) {
+  if (!user) return "\uc0ad\uc81c\ub41c \uc0ac\uc6a9\uc790";
+  return user.alias?.trim() || user.name || "\uc54c \uc218 \uc5c6\uc74c";
 }
 
-function displayName(user) {
-  if (!user) return "알 수 없음";
-  return user.alias?.trim() || user.name;
+function snapshotName(userId) {
+  return displayName(getUser(userId));
 }
 
 function persist({ broadcast = true, remote = true } = {}) {
   state.updatedAt = Date.now();
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  if (broadcast && channel) {
-    channel.postMessage({ type: "state", sourceId, state });
-  }
-  if (remote && remoteSync.enabled && remoteSync.push && !remoteSync.applying) {
-    remoteSync.push(state);
-  }
+  if (broadcast && channel) channel.postMessage({ type: "state", sourceId, state });
+  if (remote && remoteSync.enabled && remoteSync.push && !remoteSync.applying) remoteSync.push(state);
+  if (remote && githubSync.config.auto && githubConfigReady() && !githubSync.applying) queueGithubPush();
 }
 
 function showAuthenticatedApp() {
@@ -248,9 +274,9 @@ function formatAmount(amount, mode = ui.currency) {
       rest %= coin.value;
       if (count > 0) parts.push(`${count.toLocaleString("ko-KR")} ${coin.label}`);
     });
-    return parts.length ? parts.join(" ") : "0 주석";
+    return parts.length ? parts.join(" ") : `0 ${COINS[COINS.length - 1].label}`;
   }
-  return new Intl.NumberFormat("ko-KR", { style: "currency", currency: "KRW", maximumFractionDigits: 0 }).format(value);
+  return `${value.toLocaleString("ko-KR")}\uc6d0`;
 }
 
 function parseAmount(container) {
@@ -278,7 +304,7 @@ function renderAmountFields(container, amount = 0) {
   container.textContent = "";
   if (ui.currency === "krw") {
     const label = document.createElement("label");
-    label.textContent = "금액";
+    label.textContent = "\uae08\uc561";
     const input = document.createElement("input");
     input.type = "number";
     input.inputMode = "numeric";
@@ -320,10 +346,19 @@ function formatTime(timestamp) {
   }).format(new Date(timestamp));
 }
 
+function colorForUser(user) {
+  const seed = Array.from(user?.id || user?.name || "scc").reduce((sum, char) => sum + char.charCodeAt(0), 0);
+  return COLORS[seed % COLORS.length];
+}
+
+function initialForUser(user) {
+  const name = displayName(user);
+  return Array.from(name)[0]?.toUpperCase() || "S";
+}
+
 function setAvatarElement(element, user) {
-  const icon = getIcon(user);
-  element.textContent = user?.photo ? "" : icon.symbol;
-  element.style.backgroundColor = icon.color;
+  element.textContent = user?.photo ? "" : initialForUser(user);
+  element.style.backgroundColor = colorForUser(user);
   element.style.backgroundImage = user?.photo ? `url("${user.photo}")` : "";
 }
 
@@ -344,6 +379,8 @@ function emptyState(message) {
 function renderAll() {
   const user = currentUser();
   if (!user) {
+    if (currentUserId) localStorage.removeItem(SESSION_KEY);
+    currentUserId = null;
     showAuth();
     return;
   }
@@ -358,7 +395,7 @@ function renderAll() {
 }
 
 function renderHeader(user) {
-  els.welcomeText.textContent = "Secret Chamber Credits";
+  els.welcomeText.textContent = remoteSync.enabled ? "Secret Chamber Credits - Live" : "Secret Chamber Credits";
   els.heroName.textContent = displayName(user);
   setAvatarElement(els.profileShortcut, user);
   els.searchInput.value = ui.search;
@@ -371,18 +408,31 @@ function renderHome(user) {
   els.roleBadge.textContent = user.isAdmin ? "Operator" : "Member";
   els.roleBadge.classList.toggle("operator", user.isAdmin);
   els.adminPanel.classList.toggle("is-hidden", !user.isAdmin);
+  renderGithubSyncPanel();
   els.peopleFilter.value = ui.filter;
   renderAmountFields(els.seedAmountFields, state.settings.seedAmount);
   renderPeople(user);
   renderLedger(user);
 }
 
+function renderGithubSyncPanel() {
+  if (!els.githubOwner) return;
+  const config = githubSync.config;
+  els.githubOwner.value = config.owner;
+  els.githubRepo.value = config.repo;
+  els.githubBranch.value = config.branch;
+  els.githubPath.value = config.path;
+  els.githubToken.value = config.token;
+  els.githubAutoSync.checked = Boolean(config.auto);
+  const ready = githubConfigReady();
+  els.githubSyncStatus.textContent = ready && config.auto ? "Auto" : ready ? "Ready" : "Off";
+  els.githubSyncStatus.classList.toggle("is-on", ready && config.auto);
+}
+
 function visibleUsers() {
   const term = comparableName(ui.search);
   let users = [...state.users];
-  if (term) {
-    users = users.filter((user) => comparableName(`${user.name} ${user.alias || ""}`).includes(term));
-  }
+  if (term) users = users.filter((user) => comparableName(`${user.name} ${user.alias || ""}`).includes(term));
 
   users.sort((a, b) => {
     if (ui.filter === "name") return comparableName(a.name).localeCompare(comparableName(b.name), "ko-KR");
@@ -397,7 +447,7 @@ function renderPeople(user) {
   els.peopleList.textContent = "";
   const users = visibleUsers();
   if (!users.length) {
-    els.peopleList.append(emptyState("검색된 사용자가 없습니다"));
+    els.peopleList.append(emptyState("\uac80\uc0c9\ub41c \uc0ac\uc6a9\uc790\uac00 \uc5c6\uc2b5\ub2c8\ub2e4"));
     return;
   }
 
@@ -415,19 +465,18 @@ function renderPeople(user) {
     const title = document.createElement("div");
     title.className = "person-title";
     const strong = document.createElement("strong");
-    strong.textContent = person.id === user.id ? `${person.name} · 나` : person.name;
+    strong.textContent = person.id === user.id ? `${person.name} - \ub098` : person.name;
     title.append(strong);
     if (person.isAdmin) title.append(makeIconUse("icon-crown"));
 
     const sub = document.createElement("p");
     sub.className = "person-sub";
     sub.textContent = person.alias?.trim() || (person.isAdmin ? "Secret Chamber Operator" : `#${String(index + 1).padStart(2, "0")}`);
-
     main.append(title, sub);
 
     const balance = document.createElement("span");
     balance.className = "person-balance";
-    balance.textContent = user.isAdmin ? formatAmount(person.balance) : person.id === user.id ? formatAmount(person.balance) : "송금 가능";
+    balance.textContent = user.isAdmin || person.id === user.id ? formatAmount(person.balance) : "\uc1a1\uae08 \uac00\ub2a5";
     main.append(balance);
 
     const actions = document.createElement("div");
@@ -436,15 +485,25 @@ function renderPeople(user) {
       const manage = document.createElement("button");
       manage.className = "mini-button";
       manage.type = "button";
-      manage.setAttribute("aria-label", `${person.name} 금액 조정`);
-      manage.textContent = "±";
+      manage.setAttribute("aria-label", `${person.name} adjust`);
+      manage.textContent = "+/-";
       manage.addEventListener("click", () => openManageDialog(person.id));
       actions.append(manage);
+
+      if (!person.isAdmin) {
+        const remove = document.createElement("button");
+        remove.className = "mini-button danger";
+        remove.type = "button";
+        remove.setAttribute("aria-label", `${person.name} delete`);
+        remove.append(makeIconUse("icon-trash"));
+        remove.addEventListener("click", () => deleteUser(person.id));
+        actions.append(remove);
+      }
     } else if (person.id !== user.id) {
       const send = document.createElement("button");
       send.className = "mini-button";
       send.type = "button";
-      send.setAttribute("aria-label", `${person.name}에게 송금`);
+      send.setAttribute("aria-label", `${person.name} transfer`);
       send.append(makeIconUse("icon-send"));
       send.addEventListener("click", () => openTransferDialog(person.id));
       actions.append(send);
@@ -453,7 +512,7 @@ function renderPeople(user) {
       own.className = "mini-button";
       own.type = "button";
       own.disabled = true;
-      own.setAttribute("aria-label", "현재 사용자");
+      own.setAttribute("aria-label", "current user");
       own.append(makeIconUse("icon-check"));
       actions.append(own);
     }
@@ -465,22 +524,17 @@ function renderPeople(user) {
 
 function renderLedger(user) {
   els.ledgerList.textContent = "";
-  const entries = state.ledger
-    .filter((entry) => user.isAdmin || entryTouchesUser(entry, user.id))
-    .slice(0, 26);
-
+  const entries = state.ledger.filter((entry) => user.isAdmin || entryTouchesUser(entry, user.id)).slice(0, 40);
   if (!entries.length) {
-    els.ledgerList.append(emptyState("이동 내역이 없습니다"));
+    els.ledgerList.append(emptyState("\uc774\ub3d9 \ub0b4\uc5ed\uc774 \uc5c6\uc2b5\ub2c8\ub2e4"));
     return;
   }
-
   entries.forEach((entry) => els.ledgerList.append(ledgerCard(entry)));
 }
 
 function ledgerCard(entry) {
   const card = document.createElement("article");
   card.className = "timeline-card";
-
   const header = document.createElement("header");
   const title = document.createElement("strong");
   title.textContent = ledgerTitle(entry);
@@ -488,44 +542,34 @@ function ledgerCard(entry) {
   time.dateTime = new Date(entry.createdAt).toISOString();
   time.textContent = formatTime(entry.createdAt);
   header.append(title, time);
-
   const body = document.createElement("p");
   body.textContent = ledgerBody(entry);
-
   card.append(header, body);
   return card;
 }
 
+function entryName(entry, field, idField) {
+  return entry[field] || snapshotName(entry[idField]);
+}
+
 function ledgerTitle(entry) {
-  if (entry.type === "transfer") {
-    return `${nameOf(entry.fromId)} → ${nameOf(entry.toId)}`;
-  }
+  if (entry.type === "transfer") return `${entryName(entry, "fromName", "fromId")} -> ${entryName(entry, "toName", "toId")}`;
   if (entry.type === "adjustment") {
     const sign = entry.direction === "subtract" ? "-" : "+";
-    return `${nameOf(entry.targetId)} ${sign}${formatAmount(entry.amount)}`;
+    return `${entryName(entry, "targetName", "targetId")} ${sign}${formatAmount(entry.amount)}`;
   }
-  if (entry.type === "seed") {
-    return `${nameOf(entry.targetId)} 초기 자본`;
-  }
-  if (entry.type === "reset") {
-    return "크레딧 리셋";
-  }
-  return "업데이트";
+  if (entry.type === "seed") return `${entryName(entry, "targetName", "targetId")} \ucd08\uae30 \uc790\ubcf8`;
+  if (entry.type === "delete") return `${entry.targetName || "\uc0ac\uc6a9\uc790"} \uc0ad\uc81c`;
+  if (entry.type === "reset") return "\ud06c\ub808\ub527 \ub9ac\uc14b";
+  return "Update";
 }
 
 function ledgerBody(entry) {
-  if (entry.type === "transfer") {
-    return `${formatAmount(entry.amount)} · ${entry.memo || "송금"}`;
-  }
-  if (entry.type === "adjustment") {
-    return `${nameOf(entry.operatorId)} · ${entry.memo || "관리자 조정"}`;
-  }
-  if (entry.type === "seed") {
-    return `${formatAmount(entry.amount)} · ${nameOf(entry.operatorId)}`;
-  }
-  if (entry.type === "reset") {
-    return `${nameOf(entry.operatorId)} · 모든 지갑 0`;
-  }
+  if (entry.type === "transfer") return `${formatAmount(entry.amount)} - ${entry.memo || "\uc1a1\uae08"}`;
+  if (entry.type === "adjustment") return `${entryName(entry, "operatorName", "operatorId")} - ${entry.memo || "\uad00\ub9ac\uc790 \uc870\uc815"}`;
+  if (entry.type === "seed") return `${formatAmount(entry.amount)} - ${entryName(entry, "operatorName", "operatorId")}`;
+  if (entry.type === "delete") return `${entryName(entry, "operatorName", "operatorId")} - ${entry.memo || "\uc0ac\uc6a9\uc790 \uc0ad\uc81c"}`;
+  if (entry.type === "reset") return `${entryName(entry, "operatorName", "operatorId")} - all wallets 0`;
   return entry.memo || "";
 }
 
@@ -533,55 +577,51 @@ function entryTouchesUser(entry, userId) {
   return entry.fromId === userId || entry.toId === userId || entry.targetId === userId || entry.operatorId === userId;
 }
 
-function nameOf(userId) {
-  return displayName(getUser(userId));
-}
-
 function renderChat(user) {
   els.chatList.textContent = "";
   const chats = state.chats.slice(-80);
   if (!chats.length) {
-    els.chatList.append(emptyState("채팅이 없습니다"));
+    els.chatList.append(emptyState("\ucc44\ud305\uc774 \uc5c6\uc2b5\ub2c8\ub2e4"));
     return;
   }
 
   chats.forEach((chat) => {
     const bubble = document.createElement("article");
     bubble.className = `chat-bubble${chat.userId === user.id ? " own" : ""}`;
-
     const header = document.createElement("header");
     const strong = document.createElement("strong");
-    strong.textContent = nameOf(chat.userId);
+    strong.textContent = chat.userName || snapshotName(chat.userId);
     const time = document.createElement("time");
     time.dateTime = new Date(chat.createdAt).toISOString();
     time.textContent = formatTime(chat.createdAt);
     header.append(strong, time);
-
     const p = document.createElement("p");
     p.textContent = chat.message;
-
     bubble.append(header, p);
     els.chatList.append(bubble);
   });
 }
 
+function notificationsFor(user) {
+  return state.notifications.filter((notice) => notice.userId === user.id || (user.isAdmin && notice.userId === "admin"));
+}
+
 function renderAlerts(user) {
   els.alertList.textContent = "";
-  const alerts = state.notifications.filter((notification) => notification.userId === user.id || (user.isAdmin && notification.userId === "admin"));
-  const unreadCount = alerts.filter((notification) => !notification.read).length;
-  els.unreadDot.classList.toggle("is-hidden", unreadCount === 0);
+  const alerts = notificationsFor(user);
+  els.unreadDot.classList.toggle("is-hidden", alerts.length === 0);
 
   if (!alerts.length) {
-    els.alertList.append(emptyState("알림이 없습니다"));
+    els.alertList.append(emptyState("\uc54c\ub9bc\uc774 \uc5c6\uc2b5\ub2c8\ub2e4"));
     return;
   }
 
-  alerts.slice(0, 60).forEach((alert) => {
+  alerts.slice(0, 80).forEach((alert) => {
     const card = document.createElement("article");
     card.className = "timeline-card";
     const header = document.createElement("header");
     const strong = document.createElement("strong");
-    strong.textContent = `${alert.read ? "" : "• "}${alert.title}`;
+    strong.textContent = alert.title;
     const time = document.createElement("time");
     time.dateTime = new Date(alert.createdAt).toISOString();
     time.textContent = formatTime(alert.createdAt);
@@ -598,25 +638,6 @@ function renderProfile(user) {
   els.profileName.value = user.name;
   els.profileAlias.value = user.alias || "";
   els.profileName.disabled = user.isAdmin;
-  selectedIconKey = user.iconKey || ICONS[0].key;
-  renderIconPicker();
-}
-
-function renderIconPicker() {
-  els.iconPicker.textContent = "";
-  ICONS.forEach((icon) => {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = `icon-choice${icon.key === selectedIconKey ? " is-active" : ""}`;
-    button.style.backgroundColor = icon.color;
-    button.textContent = icon.symbol;
-    button.setAttribute("aria-label", `${icon.key} 아이콘`);
-    button.addEventListener("click", () => {
-      selectedIconKey = icon.key;
-      renderIconPicker();
-    });
-    els.iconPicker.append(button);
-  });
 }
 
 function renderActiveTab() {
@@ -630,9 +651,7 @@ function setTab(tab) {
   ui.tab = tab;
   saveUi();
   renderActiveTab();
-  if (tab === "chat") {
-    requestAnimationFrame(() => window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" }));
-  }
+  if (tab === "chat") requestAnimationFrame(() => window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" }));
 }
 
 function openDialog(dialog) {
@@ -648,12 +667,11 @@ function closeDialog(dialog) {
 function openTransferDialog(preselectedUserId = "") {
   const user = currentUser();
   if (!user) return;
-
   els.transferError.textContent = "";
   els.transferMemo.value = "";
   renderRecipientOptions(preselectedUserId);
   renderAmountFields(els.transferAmountFields);
-  els.transferTitle.textContent = "크레딧 보내기";
+  els.transferTitle.textContent = "\ud06c\ub808\ub527 \ubcf4\ub0b4\uae30";
   openDialog(els.transferDialog);
 }
 
@@ -666,7 +684,7 @@ function renderRecipientOptions(preselectedUserId = "") {
     .forEach((person) => {
       const option = document.createElement("option");
       option.value = person.id;
-      option.textContent = person.isAdmin ? `${person.name} · Operator` : person.name;
+      option.textContent = person.isAdmin ? `${person.name} - Operator` : person.name;
       if (person.id === preselectedUserId) option.selected = true;
       els.recipientSelect.append(option);
     });
@@ -680,33 +698,30 @@ function openManageDialog(userId) {
   els.manageError.textContent = "";
   els.manageMemo.value = "";
   const target = getUser(userId);
-  els.manageTitle.textContent = `${target?.name || "사용자"} 조정`;
+  els.manageTitle.textContent = `${target?.name || "\uc0ac\uc6a9\uc790"} \uae08\uc561 \uc870\uc815`;
   document.querySelectorAll("[data-adjust]").forEach((button) => button.classList.toggle("is-active", button.dataset.adjust === adjustMode));
   renderAmountFields(els.manageAmountFields);
   openDialog(els.manageDialog);
 }
 
 function addNotification(userId, title, body, createdAt = Date.now()) {
-  state.notifications.unshift({
-    id: uid("notice"),
-    userId,
-    title,
-    body,
-    read: false,
-    createdAt,
-  });
-  state.notifications = state.notifications.slice(0, 250);
+  state.notifications.unshift({ id: uid("notice"), userId, title, body, createdAt });
+  state.notifications = state.notifications.slice(0, 300);
+}
+
+function enrichLedger(entry) {
+  const fullEntry = { id: uid("ledger"), createdAt: Date.now(), memo: "", ...entry };
+  if (fullEntry.fromId) fullEntry.fromName = fullEntry.fromName || snapshotName(fullEntry.fromId);
+  if (fullEntry.toId) fullEntry.toName = fullEntry.toName || snapshotName(fullEntry.toId);
+  if (fullEntry.targetId) fullEntry.targetName = fullEntry.targetName || snapshotName(fullEntry.targetId);
+  if (fullEntry.operatorId) fullEntry.operatorName = fullEntry.operatorName || snapshotName(fullEntry.operatorId);
+  return fullEntry;
 }
 
 function addLedger(entry) {
-  const fullEntry = {
-    id: uid("ledger"),
-    createdAt: Date.now(),
-    memo: "",
-    ...entry,
-  };
+  const fullEntry = enrichLedger(entry);
   state.ledger.unshift(fullEntry);
-  state.ledger = state.ledger.slice(0, 300);
+  state.ledger = state.ledger.slice(0, 400);
   createLedgerNotifications(fullEntry);
   persist();
   renderAll();
@@ -715,33 +730,36 @@ function addLedger(entry) {
 
 function createLedgerNotifications(entry) {
   if (entry.type === "transfer") {
-    const from = nameOf(entry.fromId);
-    const to = nameOf(entry.toId);
     const amount = formatAmount(entry.amount);
-    addNotification(entry.toId, "크레딧 도착", `${from}님이 ${amount}를 보냈습니다`, entry.createdAt);
-    addNotification(entry.fromId, "송금 완료", `${to}님에게 ${amount}를 보냈습니다`, entry.createdAt);
-    addNotification("admin", "크레딧 이동", `${from} → ${to} · ${amount}`, entry.createdAt);
+    addNotification(entry.toId, "\ud06c\ub808\ub527 \ub3c4\ucc29", `${entry.fromName}\ub2d8\uc774 ${amount}\ub97c \ubcf4\ub0c8\uc2b5\ub2c8\ub2e4.`, entry.createdAt);
+    addNotification(entry.fromId, "\uc1a1\uae08 \uc644\ub8cc", `${entry.toName}\ub2d8\uc5d0\uac8c ${amount}\ub97c \ubcf4\ub0c8\uc2b5\ub2c8\ub2e4.`, entry.createdAt);
+    addNotification("admin", "\ud06c\ub808\ub527 \uc774\ub3d9", `${entry.fromName} -> ${entry.toName} - ${amount}`, entry.createdAt);
     return;
   }
 
   if (entry.type === "adjustment") {
     const sign = entry.direction === "subtract" ? "-" : "+";
     const amount = `${sign}${formatAmount(entry.amount)}`;
-    addNotification(entry.targetId, "금액 조정", `${nameOf(entry.operatorId)}님이 ${amount} 조정했습니다`, entry.createdAt);
-    addNotification("admin", "관리자 조정", `${nameOf(entry.targetId)} · ${amount}`, entry.createdAt);
+    addNotification(entry.targetId, "\uae08\uc561 \uc870\uc815", `${entry.operatorName}\ub2d8\uc774 ${amount} \uc870\uc815\ud588\uc2b5\ub2c8\ub2e4.`, entry.createdAt);
+    addNotification("admin", "\uad00\ub9ac\uc790 \uc870\uc815", `${entry.targetName} - ${amount}`, entry.createdAt);
     return;
   }
 
   if (entry.type === "seed") {
     const amount = formatAmount(entry.amount);
-    addNotification(entry.targetId, "초기 자본", `${amount} 지급`, entry.createdAt);
-    addNotification("admin", "초기 자본 지급", `${nameOf(entry.targetId)} · ${amount}`, entry.createdAt);
+    addNotification(entry.targetId, "\ucd08\uae30 \uc790\ubcf8", `${amount} \uc9c0\uae09`, entry.createdAt);
+    addNotification("admin", "\ucd08\uae30 \uc790\ubcf8 \uc9c0\uae09", `${entry.targetName} - ${amount}`, entry.createdAt);
+    return;
+  }
+
+  if (entry.type === "delete") {
+    addNotification("admin", "\uc0ac\uc6a9\uc790 \uc0ad\uc81c", `${entry.targetName} \uc0ad\uc81c`, entry.createdAt);
     return;
   }
 
   if (entry.type === "reset") {
-    state.users.forEach((user) => addNotification(user.id, "크레딧 리셋", `${nameOf(entry.operatorId)}님이 지갑을 리셋했습니다`, entry.createdAt));
-    addNotification("admin", "크레딧 리셋", "모든 지갑이 0으로 변경되었습니다", entry.createdAt);
+    state.users.forEach((user) => addNotification(user.id, "\ud06c\ub808\ub527 \ub9ac\uc14b", `${entry.operatorName}\ub2d8\uc774 \uc9c0\uac11\uc744 \ub9ac\uc14b\ud588\uc2b5\ub2c8\ub2e4.`, entry.createdAt));
+    addNotification("admin", "\ud06c\ub808\ub527 \ub9ac\uc14b", "\ubaa8\ub4e0 \uc9c0\uac11\uc774 0\uc6d0\uc73c\ub85c \ubcc0\uacbd\ub418\uc5c8\uc2b5\ub2c8\ub2e4.", entry.createdAt);
   }
 }
 
@@ -751,33 +769,29 @@ function toastForLedger(entry) {
   if (!user.isAdmin && !entryTouchesUser(entry, user.id)) return;
 
   if (entry.type === "transfer") {
-    if (entry.toId === user.id) {
-      showToast("크레딧 도착", `${nameOf(entry.fromId)}님이 ${formatAmount(entry.amount)}를 보냈습니다`);
-    } else if (entry.fromId === user.id) {
-      showToast("송금 완료", `${nameOf(entry.toId)}님에게 ${formatAmount(entry.amount)}를 보냈습니다`);
-    } else if (user.isAdmin) {
-      showToast("크레딧 이동", `${nameOf(entry.fromId)} → ${nameOf(entry.toId)} · ${formatAmount(entry.amount)}`);
-    }
+    if (entry.toId === user.id) showToast("\ud06c\ub808\ub527 \ub3c4\ucc29", `${entry.fromName}\ub2d8\uc774 ${formatAmount(entry.amount)}\ub97c \ubcf4\ub0c8\uc2b5\ub2c8\ub2e4.`);
+    else if (entry.fromId === user.id) showToast("\uc1a1\uae08 \uc644\ub8cc", `${entry.toName}\ub2d8\uc5d0\uac8c ${formatAmount(entry.amount)}\ub97c \ubcf4\ub0c8\uc2b5\ub2c8\ub2e4.`);
+    else if (user.isAdmin) showToast("\ud06c\ub808\ub527 \uc774\ub3d9", `${entry.fromName} -> ${entry.toName} - ${formatAmount(entry.amount)}`);
     return;
   }
 
   if (entry.type === "adjustment") {
     const sign = entry.direction === "subtract" ? "-" : "+";
-    showToast("금액 조정", `${nameOf(entry.targetId)} · ${sign}${formatAmount(entry.amount)}`);
+    showToast("\uae08\uc561 \uc870\uc815", `${entry.targetName} - ${sign}${formatAmount(entry.amount)}`);
     return;
   }
 
   if (entry.type === "seed") {
-    showToast("초기 자본 지급", `${nameOf(entry.targetId)} · ${formatAmount(entry.amount)}`);
+    showToast("\ucd08\uae30 \uc790\ubcf8 \uc9c0\uae09", `${entry.targetName} - ${formatAmount(entry.amount)}`);
     return;
   }
 
-  if (entry.type === "reset") {
-    showToast("크레딧 리셋", "모든 지갑이 0으로 변경되었습니다");
-  }
+  if (entry.type === "delete") showToast("\uc0ac\uc6a9\uc790 \uc0ad\uc81c", entry.targetName);
+  if (entry.type === "reset") showToast("\ud06c\ub808\ub527 \ub9ac\uc14b", "\ubaa8\ub4e0 \uc9c0\uac11\uc774 0\uc6d0\uc73c\ub85c \ubcc0\uacbd\ub418\uc5c8\uc2b5\ub2c8\ub2e4.");
 }
 
 function showToast(title, body) {
+  els.toastRegion.textContent = "";
   const toast = document.createElement("article");
   toast.className = "toast";
   const strong = document.createElement("strong");
@@ -790,16 +804,150 @@ function showToast(title, body) {
     toast.style.opacity = "0";
     toast.style.transform = "translateY(-8px)";
     toast.addEventListener("transitionend", () => toast.remove(), { once: true });
-  }, 3600);
+  }, 5000);
+}
+
+function updateGithubConfigFromFields() {
+  githubSync.config = {
+    owner: normalizeName(els.githubOwner.value),
+    repo: normalizeName(els.githubRepo.value),
+    branch: normalizeName(els.githubBranch.value) || "main",
+    path: normalizeName(els.githubPath.value) || "data/credits-state.json",
+    token: els.githubToken.value.trim(),
+    auto: els.githubAutoSync.checked,
+  };
+  saveGithubConfig();
+  renderGithubSyncPanel();
+  restartGithubPolling();
+}
+
+function githubConfigReady() {
+  const config = githubSync.config;
+  return Boolean(config.owner && config.repo && config.branch && config.path && config.token);
+}
+
+function githubApiUrl() {
+  const config = githubSync.config;
+  const encodedPath = config.path.split("/").map(encodeURIComponent).join("/");
+  return `https://api.github.com/repos/${encodeURIComponent(config.owner)}/${encodeURIComponent(config.repo)}/contents/${encodedPath}`;
+}
+
+function githubHeaders() {
+  return {
+    Accept: "application/vnd.github+json",
+    Authorization: `Bearer ${githubSync.config.token}`,
+    "X-GitHub-Api-Version": "2022-11-28",
+  };
+}
+
+function encodeBase64Unicode(value) {
+  const bytes = new TextEncoder().encode(value);
+  let binary = "";
+  bytes.forEach((byte) => {
+    binary += String.fromCharCode(byte);
+  });
+  return btoa(binary);
+}
+
+function decodeBase64Unicode(value) {
+  const binary = atob(value.replace(/\s/g, ""));
+  const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+  return new TextDecoder().decode(bytes);
+}
+
+async function fetchGithubFile() {
+  if (!githubConfigReady()) throw new Error("GitHub sync config missing.");
+  const url = `${githubApiUrl()}?ref=${encodeURIComponent(githubSync.config.branch)}`;
+  const response = await fetch(url, { headers: githubHeaders(), cache: "no-store" });
+  if (response.status === 404) return null;
+  if (!response.ok) throw new Error(`GitHub pull failed: ${response.status}`);
+  const payload = await response.json();
+  githubSync.sha = payload.sha || "";
+  return {
+    sha: payload.sha || "",
+    state: normalizeState(JSON.parse(decodeBase64Unicode(payload.content || ""))),
+  };
+}
+
+async function pullFromGithub({ quiet = false } = {}) {
+  if (!githubConfigReady()) {
+    if (!quiet) showToast("GitHub Sync", "Owner, repo, path, token required.");
+    return;
+  }
+
+  try {
+    githubSync.applying = true;
+    const remote = await fetchGithubFile();
+    if (remote?.state) {
+      state = remote.state;
+      await ensureAdmin();
+      persist({ remote: false });
+      renderAll();
+      if (!quiet) showToast("GitHub Pull", "Credits loaded from repository.");
+    } else if (!quiet) {
+      showToast("GitHub Pull", "No data file yet.");
+    }
+  } catch (error) {
+    if (!quiet) showToast("GitHub Pull Failed", error.message);
+  } finally {
+    githubSync.applying = false;
+  }
+}
+
+async function pushToGithub({ quiet = false } = {}) {
+  if (!githubConfigReady()) {
+    if (!quiet) showToast("GitHub Sync", "Owner, repo, path, token required.");
+    return;
+  }
+
+  try {
+    githubSync.applying = true;
+    const latest = await fetchGithubFile();
+    const nextState = normalizeState(state);
+    const body = {
+      message: `Update Secret Chamber Credits ${new Date().toISOString()}`,
+      content: encodeBase64Unicode(JSON.stringify(nextState, null, 2)),
+      branch: githubSync.config.branch,
+      committer: { name: "Secret Chamber Credits", email: "actions@users.noreply.github.com" },
+    };
+    if (latest?.sha) body.sha = latest.sha;
+
+    const response = await fetch(githubApiUrl(), {
+      method: "PUT",
+      headers: { ...githubHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!response.ok) throw new Error(`GitHub push failed: ${response.status}`);
+    const payload = await response.json();
+    githubSync.sha = payload.content?.sha || "";
+    if (!quiet) showToast("GitHub Push", "Credits uploaded to repository.");
+  } catch (error) {
+    if (!quiet) showToast("GitHub Push Failed", error.message);
+  } finally {
+    githubSync.applying = false;
+  }
+}
+
+let githubPushTimer = null;
+
+function queueGithubPush() {
+  window.clearTimeout(githubPushTimer);
+  githubPushTimer = window.setTimeout(() => pushToGithub({ quiet: true }), 1400);
+}
+
+function restartGithubPolling() {
+  window.clearInterval(githubSync.timer);
+  if (!githubSync.config.auto || !githubConfigReady()) return;
+  githubSync.timer = window.setInterval(() => pullFromGithub({ quiet: true }), 15000);
 }
 
 function transferCredits(toId, amount, memo) {
   const from = currentUser();
   const to = getUser(toId);
-  if (!from || !to) return "받는 사람을 선택해주세요";
-  if (from.id === to.id) return "자기 자신에게는 보낼 수 없습니다";
-  if (!Number.isFinite(amount) || amount <= 0) return "금액을 입력해주세요";
-  if ((from.balance || 0) < amount) return "잔액이 부족합니다";
+  if (!from || !to) return "\ubc1b\ub294 \uc0ac\ub78c\uc744 \uc120\ud0dd\ud574\uc8fc\uc138\uc694.";
+  if (from.id === to.id) return "\uc790\uae30 \uc790\uc2e0\uc5d0\uac8c\ub294 \ubcf4\ub0bc \uc218 \uc5c6\uc2b5\ub2c8\ub2e4.";
+  if (!Number.isFinite(amount) || amount <= 0) return "\uae08\uc561\uc744 \uc785\ub825\ud574\uc8fc\uc138\uc694.";
+  if ((from.balance || 0) < amount) return "\uc794\uc561\uc774 \ubd80\uc871\ud569\ub2c8\ub2e4.";
 
   from.balance = Math.max(0, Math.round(from.balance - amount));
   to.balance = Math.round((to.balance || 0) + amount);
@@ -812,10 +960,10 @@ function transferCredits(toId, amount, memo) {
 function adjustCredits(targetId, amount, direction, memo) {
   const operator = currentUser();
   const target = getUser(targetId);
-  if (!operator?.isAdmin) return "관리자만 조정할 수 있습니다";
-  if (!target) return "사용자를 찾을 수 없습니다";
-  if (!Number.isFinite(amount) || amount <= 0) return "금액을 입력해주세요";
-  if (direction === "subtract" && (target.balance || 0) < amount) return "잔액보다 큰 금액은 뺄 수 없습니다";
+  if (!operator?.isAdmin) return "Operator only.";
+  if (!target) return "User not found.";
+  if (!Number.isFinite(amount) || amount <= 0) return "\uae08\uc561\uc744 \uc785\ub825\ud574\uc8fc\uc138\uc694.";
+  if (direction === "subtract" && (target.balance || 0) < amount) return "\uc794\uc561\ubcf4\ub2e4 \ud070 \uae08\uc561\uc740 \ube84 \uc218 \uc5c6\uc2b5\ub2c8\ub2e4.";
 
   target.balance = direction === "subtract" ? Math.round(target.balance - amount) : Math.round((target.balance || 0) + amount);
   target.lastActive = Date.now();
@@ -826,42 +974,31 @@ function adjustCredits(targetId, amount, direction, memo) {
 
 function seedCapital(amount) {
   const operator = currentUser();
-  if (!operator?.isAdmin) return "관리자만 지급할 수 있습니다";
-  if (!Number.isFinite(amount) || amount <= 0) return "초기 자본을 입력해주세요";
+  if (!operator?.isAdmin) return "Operator only.";
+  if (!Number.isFinite(amount) || amount <= 0) return "\ucd08\uae30 \uc790\ubcf8\uc744 \uc785\ub825\ud574\uc8fc\uc138\uc694.";
   const targets = state.users.filter((user) => !user.isAdmin);
-  if (!targets.length) return "지급할 사용자가 없습니다";
+  if (!targets.length) return "\uc9c0\uae09\ud560 \uc0ac\uc6a9\uc790\uac00 \uc5c6\uc2b5\ub2c8\ub2e4.";
 
   state.settings.seedAmount = amount;
   const now = Date.now();
-  const entries = targets.map((target) => {
+  targets.forEach((target) => {
     target.balance = Math.round((target.balance || 0) + amount);
     target.lastActive = now;
-    return {
-      id: uid("ledger"),
-      type: "seed",
-      operatorId: operator.id,
-      targetId: target.id,
-      amount,
-      memo: "초기 자본",
-      createdAt: now,
-    };
-  });
-
-  entries.reverse().forEach((entry) => {
+    const entry = enrichLedger({ type: "seed", operatorId: operator.id, targetId: target.id, amount, memo: "\ucd08\uae30 \uc790\ubcf8", createdAt: now });
     state.ledger.unshift(entry);
     createLedgerNotifications(entry);
   });
-  state.ledger = state.ledger.slice(0, 300);
+  state.ledger = state.ledger.slice(0, 400);
   persist();
   renderAll();
-  showToast("초기 자본 지급", `${targets.length}명에게 ${formatAmount(amount)} 지급`);
+  showToast("\ucd08\uae30 \uc790\ubcf8 \uc9c0\uae09", `${targets.length}\uba85 - ${formatAmount(amount)}`);
   return "";
 }
 
 function resetCredits() {
   const operator = currentUser();
   if (!operator?.isAdmin) return;
-  const confirmed = window.confirm("모든 지갑 금액과 이동 내역을 리셋할까요?");
+  const confirmed = window.confirm("Reset every wallet to 0?");
   if (!confirmed) return;
 
   state.users.forEach((user) => {
@@ -870,7 +1007,24 @@ function resetCredits() {
   });
   state.ledger = [];
   state.notifications = [];
-  addLedger({ type: "reset", operatorId: operator.id, amount: 0, memo: "관리자 리셋" });
+  addLedger({ type: "reset", operatorId: operator.id, amount: 0, memo: "reset" });
+}
+
+function deleteUser(targetId) {
+  const operator = currentUser();
+  const target = getUser(targetId);
+  if (!operator?.isAdmin || !target || target.isAdmin) return;
+  const confirmed = window.confirm(`Delete ${target.name}?`);
+  if (!confirmed) return;
+
+  const entry = enrichLedger({ type: "delete", operatorId: operator.id, targetId: target.id, targetName: displayName(target), memo: "delete user" });
+  state.users = state.users.filter((user) => user.id !== target.id);
+  state.notifications = state.notifications.filter((notice) => notice.userId !== target.id);
+  state.ledger.unshift(entry);
+  createLedgerNotifications(entry);
+  persist();
+  renderAll();
+  toastForLedger(entry);
 }
 
 async function handleAuth(event) {
@@ -880,48 +1034,51 @@ async function handleAuth(event) {
   const pin = els.authPin.value.trim();
 
   if (!name) {
-    els.authError.textContent = "이름을 입력해주세요";
+    els.authError.textContent = "\uc774\ub984\uc744 \uc785\ub825\ud574\uc8fc\uc138\uc694.";
     return;
   }
   if (!/^\d{4}$/.test(pin)) {
-    els.authError.textContent = "인증번호는 숫자 4자리입니다";
+    els.authError.textContent = "\uc778\uc99d\ubc88\ud638\ub294 \uc22b\uc790 4\uc790\ub9ac\uc785\ub2c8\ub2e4.";
     return;
   }
 
   const isAdminAttempt = comparableName(name) === comparableName(ADMIN_NAME);
   if (isAdminAttempt && pin !== ADMIN_PIN) {
-    els.authError.textContent = "운영자 인증번호가 다릅니다";
+    els.authError.textContent = "\uc6b4\uc601\uc790 \uc778\uc99d\ubc88\ud638\uac00 \ub2e4\ub985\ub2c8\ub2e4.";
     return;
   }
 
   const pinHash = await hashPin(pin);
   let user = state.users.find((person) => comparableName(person.name) === comparableName(name));
+  let created = false;
 
   if (user) {
     if (user.pinHash !== pinHash) {
-      els.authError.textContent = "인증번호가 다릅니다";
+      els.authError.textContent = "\uc778\uc99d\ubc88\ud638\uac00 \ub2e4\ub985\ub2c8\ub2e4.";
       return;
     }
+  } else if (isAdminAttempt) {
+    user = getUser(ADMIN_ID);
   } else {
-    if (isAdminAttempt) user = getUser(ADMIN_ID);
-    else {
-      user = {
-        id: uid("user"),
-        name,
-        alias: "",
-        pinHash,
-        iconKey: ICONS[Math.floor(Math.random() * ICONS.length)].key,
-        photo: "",
-        balance: 0,
-        isAdmin: false,
-        createdAt: Date.now(),
-        lastActive: Date.now(),
-      };
-      state.users.push(user);
-    }
+    user = {
+      id: uid("user"),
+      name,
+      alias: "",
+      pinHash,
+      photo: "",
+      balance: 0,
+      isAdmin: false,
+      createdAt: Date.now(),
+      lastActive: Date.now(),
+    };
+    state.users.push(user);
+    created = true;
   }
 
   user.lastActive = Date.now();
+  if (created) {
+    addNotification("admin", "\uc2e0\uaddc \uc0ac\uc6a9\uc790", `${user.name}\ub2d8\uc774 \uc0dd\uc131\ub418\uc5c8\uc2b5\ub2c8\ub2e4.`, Date.now());
+  }
   currentUserId = user.id;
   localStorage.setItem(SESSION_KEY, currentUserId);
   persist();
@@ -940,26 +1097,25 @@ function handleProfileSave(event) {
   const nextName = normalizeName(els.profileName.value);
   const nextAlias = normalizeName(els.profileAlias.value);
   if (!nextName) {
-    els.profileError.textContent = "이름을 입력해주세요";
+    els.profileError.textContent = "\uc774\ub984\uc744 \uc785\ub825\ud574\uc8fc\uc138\uc694.";
     return;
   }
   if (!user.isAdmin && comparableName(nextName) === comparableName(ADMIN_NAME)) {
-    els.profileError.textContent = "운영자 이름은 사용할 수 없습니다";
+    els.profileError.textContent = "\uc6b4\uc601\uc790 \uc774\ub984\uc740 \uc0ac\uc6a9\ud560 \uc218 \uc5c6\uc2b5\ub2c8\ub2e4.";
     return;
   }
   const duplicate = state.users.some((person) => person.id !== user.id && comparableName(person.name) === comparableName(nextName));
   if (duplicate) {
-    els.profileError.textContent = "이미 사용 중인 이름입니다";
+    els.profileError.textContent = "\uc774\ubbf8 \uc0ac\uc6a9 \uc911\uc778 \uc774\ub984\uc785\ub2c8\ub2e4.";
     return;
   }
 
   if (!user.isAdmin) user.name = nextName;
   user.alias = nextAlias;
-  user.iconKey = selectedIconKey;
   user.lastActive = Date.now();
   persist();
   renderAll();
-  showToast("프로필 저장", displayName(user));
+  showToast("\ud504\ub85c\ud544 \uc800\uc7a5", displayName(user));
 }
 
 async function handlePhoto(file) {
@@ -970,9 +1126,9 @@ async function handlePhoto(file) {
     user.lastActive = Date.now();
     persist();
     renderAll();
-    showToast("프로필 사진 저장", displayName(user));
+    showToast("\ud504\ub85c\ud544 \uc0ac\uc9c4 \uc800\uc7a5", displayName(user));
   } catch {
-    showToast("사진 저장 실패", "다른 이미지를 선택해주세요");
+    showToast("\uc0ac\uc9c4 \uc800\uc7a5 \uc2e4\ud328", "\ub2e4\ub978 \uc774\ubbf8\uc9c0\ub97c \uc120\ud0dd\ud574\uc8fc\uc138\uc694.");
   }
 }
 
@@ -1002,10 +1158,12 @@ function resizeImage(file) {
 }
 
 function handleIncomingState(nextState) {
-  const knownLedgerIds = new Set(state.ledger.map((entry) => entry.id));
+  const wasLoggedIn = Boolean(currentUserId);
+  const knownLedgerIds = new Set((state?.ledger || []).map((entry) => entry.id));
   state = normalizeState(nextState);
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   renderAll();
+  if (wasLoggedIn && !currentUser()) showToast("\uc0ac\uc6a9\uc790 \uc0ad\uc81c", "\uacc4\uc815\uc774 \uc0ad\uc81c\ub418\uc5c8\uc2b5\ub2c8\ub2e4.");
   state.ledger
     .filter((entry) => !knownLedgerIds.has(entry.id))
     .reverse()
@@ -1016,7 +1174,6 @@ async function initRemoteSync() {
   try {
     const configModule = await import("./firebase-config.js");
     if (!configModule.firebaseConfig) return;
-
     const [{ initializeApp }, databaseModule] = await Promise.all([
       import("https://www.gstatic.com/firebasejs/10.12.4/firebase-app.js"),
       import("https://www.gstatic.com/firebasejs/10.12.4/firebase-database.js"),
@@ -1032,7 +1189,7 @@ async function initRemoteSync() {
       try {
         await set(stateRef, JSON.parse(JSON.stringify(nextState)));
       } catch {
-        showToast("원격 저장 실패", "네트워크 또는 Firebase 권한을 확인해주세요");
+        showToast("Sync failed", "Check Firebase rules.");
       }
     };
 
@@ -1066,8 +1223,8 @@ async function initRemoteSync() {
 
 function bindEvents() {
   els.authForm.addEventListener("submit", handleAuth);
-
   els.profileShortcut.addEventListener("click", () => setTab("profile"));
+
   els.searchInput.addEventListener("input", () => {
     ui.search = els.searchInput.value;
     saveUi();
@@ -1090,16 +1247,10 @@ function bindEvents() {
     renderPeople(currentUser());
   });
 
-  document.querySelectorAll(".nav-item").forEach((button) => {
-    button.addEventListener("click", () => setTab(button.dataset.tab));
-  });
-
+  document.querySelectorAll(".nav-item").forEach((button) => button.addEventListener("click", () => setTab(button.dataset.tab)));
   els.fabButton.addEventListener("click", () => openTransferDialog());
   els.walletSendButton.addEventListener("click", () => openTransferDialog());
-
-  document.querySelectorAll("[data-close-dialog]").forEach((button) => {
-    button.addEventListener("click", () => closeDialog(button.closest("dialog")));
-  });
+  document.querySelectorAll("[data-close-dialog]").forEach((button) => button.addEventListener("click", () => closeDialog(button.closest("dialog"))));
 
   els.transferForm.addEventListener("submit", (event) => {
     event.preventDefault();
@@ -1126,17 +1277,42 @@ function bindEvents() {
 
   els.seedButton.addEventListener("click", () => {
     const error = seedCapital(parseAmount(els.seedAmountFields));
-    if (error) showToast("초기 자본", error);
+    if (error) showToast("\ucd08\uae30 \uc790\ubcf8", error);
   });
 
   els.resetButton.addEventListener("click", resetCredits);
+
+  els.githubSaveConfig.addEventListener("click", () => {
+    updateGithubConfigFromFields();
+    showToast("GitHub Sync", githubConfigReady() ? "Saved." : "Saved, but token/config is incomplete.");
+  });
+
+  els.githubAutoSync.addEventListener("change", () => {
+    updateGithubConfigFromFields();
+    if (githubSync.config.auto && githubConfigReady()) {
+      pushToGithub({ quiet: true });
+      showToast("GitHub Sync", "Auto upload is on.");
+    } else {
+      showToast("GitHub Sync", "Auto upload is off.");
+    }
+  });
+
+  els.githubPullButton.addEventListener("click", () => {
+    updateGithubConfigFromFields();
+    pullFromGithub();
+  });
+
+  els.githubPushButton.addEventListener("click", () => {
+    updateGithubConfigFromFields();
+    pushToGithub();
+  });
 
   els.chatForm.addEventListener("submit", (event) => {
     event.preventDefault();
     const user = currentUser();
     const message = normalizeName(els.chatInput.value);
     if (!user || !message) return;
-    state.chats.push({ id: uid("chat"), userId: user.id, message, createdAt: Date.now() });
+    state.chats.push({ id: uid("chat"), userId: user.id, userName: displayName(user), message, createdAt: Date.now() });
     state.chats = state.chats.slice(-180);
     user.lastActive = Date.now();
     els.chatInput.value = "";
@@ -1148,9 +1324,7 @@ function bindEvents() {
   els.markReadButton.addEventListener("click", () => {
     const user = currentUser();
     if (!user) return;
-    state.notifications.forEach((notification) => {
-      if (notification.userId === user.id || (user.isAdmin && notification.userId === "admin")) notification.read = true;
-    });
+    state.notifications = state.notifications.filter((notice) => !(notice.userId === user.id || (user.isAdmin && notice.userId === "admin")));
     persist();
     renderAlerts(user);
   });
@@ -1176,9 +1350,7 @@ function bindEvents() {
 
   if (channel) {
     channel.addEventListener("message", (event) => {
-      if (event.data?.type === "state" && event.data.sourceId !== sourceId) {
-        handleIncomingState(event.data.state);
-      }
+      if (event.data?.type === "state" && event.data.sourceId !== sourceId) handleIncomingState(event.data.state);
     });
   }
 }
@@ -1186,9 +1358,11 @@ function bindEvents() {
 async function init() {
   state = loadState();
   await ensureAdmin();
-  persist({ broadcast: false });
   bindEvents();
   await initRemoteSync();
+  if (githubSync.config.auto && githubConfigReady()) await pullFromGithub({ quiet: true });
+  restartGithubPolling();
+  persist({ broadcast: false, remote: false });
 
   if (!currentUser()) {
     currentUserId = null;
@@ -1198,7 +1372,7 @@ async function init() {
   renderAll();
 
   if ("serviceWorker" in navigator && location.protocol !== "file:") {
-    navigator.serviceWorker.register("./sw.js").catch(() => {});
+    navigator.serviceWorker.register("./sw.js?v=3").catch(() => {});
   }
 }
 
