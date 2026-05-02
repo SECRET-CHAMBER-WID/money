@@ -1,0 +1,17 @@
+{
+  "name": "Secret Chamber Credits",
+  "short_name": "SCC",
+  "description": "Shared credit wallet for Secret Chamber members.",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#e4ebf2",
+  "theme_color": "#e4ebf2",
+  "icons": [
+    {
+      "src": "./icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
