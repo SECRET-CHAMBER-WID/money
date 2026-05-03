@@ -5,7 +5,7 @@ const GITHUB_SYNC_KEY = "secret-chamber-credits-github-sync";
 const ADMIN_NAME = "\uc704\ub4dc";
 const ADMIN_PIN = "4001";
 const ADMIN_ID = "operator-with-4001";
-const VERSION = 9;
+const VERSION = 10;
 
 const COINS = [
   { key: "gold", label: "\uae08\ud654", short: "G", value: 10000, emoji: "\uD83E\uDE99" },
@@ -57,8 +57,8 @@ let selectedManageUserId = null;
 let selectedActionUserId = null;
 let selectedRecipientIds = new Set();
 let transferMultiple = false;
-let alertsEditing = false;
 let adjustMode = "add";
+const toastedLedgerIds = new Set();
 
 const $ = (selector) => document.querySelector(selector);
 
@@ -765,11 +765,10 @@ function notificationsFor(user) {
 function renderAlerts(user) {
   els.alertList.textContent = "";
   const alerts = notificationsFor(user);
-  if (!alerts.length) alertsEditing = false;
   els.markReadButton.disabled = alerts.length === 0;
-  els.markReadButton.classList.toggle("is-active", alertsEditing);
-  els.markReadButton.textContent = alertsEditing ? "\uc644\ub8cc" : "\uc815\ub9ac";
-  els.alertList.classList.toggle("is-editing", alertsEditing);
+  els.markReadButton.classList.remove("is-active");
+  els.markReadButton.textContent = "\uc815\ub9ac";
+  els.alertList.classList.remove("is-editing");
   els.unreadDot.classList.toggle("is-hidden", alerts.length === 0);
 
   if (!alerts.length) {
@@ -846,12 +845,13 @@ function deleteNotification(noticeId) {
   renderAlerts(user);
 }
 
-function toggleAlertEditing() {
+function clearNotifications() {
   const user = currentUser();
   if (!user || !notificationsFor(user).length) return;
-  alertsEditing = !alertsEditing;
-  closeOpenAlerts();
+  state.notifications = state.notifications.filter((notice) => !(notice.userId === user.id || (user.isAdmin && notice.userId === "admin")));
+  persist();
   renderAlerts(user);
+  showToast("\uc54c\ub9bc", "\uc815\ub9ac\ub418\uc5c8\uc2b5\ub2c8\ub2e4.");
 }
 
 function deleteLedgerEntry(ledgerId) {
@@ -1134,7 +1134,9 @@ function createLedgerNotifications(entry) {
 function toastForLedger(entry) {
   const user = currentUser();
   if (!user) return;
+  if (entry.id && toastedLedgerIds.has(entry.id)) return;
   if (!user.isAdmin && !entryTouchesUser(entry, user.id)) return;
+  if (entry.id) toastedLedgerIds.add(entry.id);
 
   if (entry.type === "transfer") {
     const fromName = entryName(entry, "fromName", "fromId");
@@ -1159,6 +1161,12 @@ function toastForLedger(entry) {
   if (entry.type === "delete") showToast("\uc0ac\uc6a9\uc790 \uc0ad\uc81c", entryName(entry, "targetName", "targetId"));
   if (entry.type === "reset-user") showToast("\uc794\uc561 \ub9ac\uc14b", `${entryName(entry, "targetName", "targetId")} - ${formatAmount(0)}`);
   if (entry.type === "reset") showToast("\ud06c\ub808\ub527 \ub9ac\uc14b", "\ubaa8\ub4e0 \uc9c0\uac11\uc774 0\uc73c\ub85c \ubcc0\uacbd\ub418\uc5c8\uc2b5\ub2c8\ub2e4.");
+}
+
+function rememberLedgerToasts(entries = state?.ledger || []) {
+  entries.forEach((entry) => {
+    if (entry?.id) toastedLedgerIds.add(entry.id);
+  });
 }
 
 function showToast(title, body) {
@@ -1356,6 +1364,7 @@ function transferCreditsToMany(toIds, amount, memo) {
     createLedgerNotifications(entry);
   });
   state.ledger = state.ledger.slice(0, 400);
+  rememberLedgerToasts(entries);
   persist();
   renderAll();
   showToast("\uc1a1\uae08 \uc644\ub8cc", `${recipients.length}\uba85 - ${formatAmount(amount)}`);
@@ -1386,14 +1395,17 @@ function seedCapital(amount) {
 
   state.settings.seedAmount = amount;
   const now = Date.now();
+  const entries = [];
   targets.forEach((target) => {
     target.balance = Math.round((target.balance || 0) + amount);
     target.lastActive = now;
     const entry = enrichLedger({ type: "seed", operatorId: operator.id, targetId: target.id, amount, memo: "\ucd08\uae30 \uc790\ubcf8", createdAt: now });
     state.ledger.unshift(entry);
+    entries.push(entry);
     createLedgerNotifications(entry);
   });
   state.ledger = state.ledger.slice(0, 400);
+  rememberLedgerToasts(entries);
   persist();
   renderAll();
   showToast("\ucd08\uae30 \uc790\ubcf8 \uc9c0\uae09", `${targets.length}\uba85 - ${formatAmount(amount)}`);
@@ -1760,7 +1772,7 @@ function bindEvents() {
 
   els.clearChatButton.addEventListener("click", clearChats);
 
-  els.markReadButton.addEventListener("click", toggleAlertEditing);
+  els.markReadButton.addEventListener("click", clearNotifications);
 
   els.actionResetUserButton.addEventListener("click", () => {
     const targetId = selectedActionUserId;
@@ -1803,6 +1815,7 @@ async function init() {
   await initRemoteSync();
   if (githubSync.config.auto && githubConfigReady()) await pullFromGithub({ quiet: true });
   restartGithubPolling();
+  rememberLedgerToasts();
   persist({ broadcast: false, remote: false });
 
   if (!currentUser()) {
@@ -1816,7 +1829,7 @@ async function init() {
   renderAll();
 
   if ("serviceWorker" in navigator && location.protocol !== "file:") {
-    navigator.serviceWorker.register("./sw.js?v=5").catch(() => {});
+    navigator.serviceWorker.register("./sw.js?v=6").catch(() => {});
   }
 }
 

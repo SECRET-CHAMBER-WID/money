@@ -830,8 +830,7 @@ select:focus {
 }
 
 .alert-row.is-open .alert-card,
-.ledger-row.is-open .ledger-card,
-.timeline-list.is-editing .alert-row .alert-card {
+.ledger-row.is-open .ledger-card {
   transform: translateX(-64px);
 }
 
