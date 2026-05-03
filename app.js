@@ -5,7 +5,7 @@ const GITHUB_SYNC_KEY = "secret-chamber-credits-github-sync";
 const ADMIN_NAME = "\uc704\ub4dc";
 const ADMIN_PIN = "4001";
 const ADMIN_ID = "operator-with-4001";
-const VERSION = 10;
+const VERSION = 11;
 
 const COINS = [
   { key: "gold", label: "\uae08\ud654", short: "G", value: 10000, emoji: "\uD83E\uDE99" },
@@ -41,6 +41,7 @@ const remoteSync = {
   enabled: false,
   applying: false,
   push: null,
+  lastLocalUpdatedAt: 0,
 };
 
 const githubSync = {
@@ -307,11 +308,18 @@ function scrubOperatorText(text) {
   return value.replaceAll(ADMIN_NAME, "\uc6b4\uc601\uc790");
 }
 
-function persist({ broadcast = true, remote = true } = {}) {
-  state.updatedAt = Date.now();
+function nextUpdatedAt() {
+  return Math.max(Date.now(), Math.round(Number(state?.updatedAt) || 0) + 1);
+}
+
+function persist({ broadcast = true, remote = true, touch = true } = {}) {
+  if (touch) state.updatedAt = nextUpdatedAt();
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   if (broadcast && channel) channel.postMessage({ type: "state", sourceId, state });
-  if (remote && remoteSync.enabled && remoteSync.push && !remoteSync.applying) remoteSync.push(state);
+  if (remote && remoteSync.enabled && remoteSync.push && !remoteSync.applying) {
+    remoteSync.lastLocalUpdatedAt = Math.max(remoteSync.lastLocalUpdatedAt, Number(state.updatedAt) || 0);
+    remoteSync.push(state);
+  }
   if (remote && githubSync.config.auto && githubConfigReady() && !githubSync.applying) queueGithubPush();
 }
 
@@ -777,18 +785,7 @@ function renderAlerts(user) {
   }
 
   alerts.slice(0, 80).forEach((alert) => {
-    const row = document.createElement("article");
-    row.className = "alert-row";
-    row.dataset.noticeId = alert.id;
-
-    const remove = document.createElement("button");
-    remove.className = "alert-delete";
-    remove.type = "button";
-    remove.setAttribute("aria-label", "Delete alert");
-    remove.append(makeIconUse("icon-trash"));
-    remove.addEventListener("click", () => deleteNotification(alert.id));
-
-    const card = document.createElement("div");
+    const card = document.createElement("article");
     card.className = "timeline-card alert-card";
     const header = document.createElement("header");
     const strong = document.createElement("strong");
@@ -800,9 +797,7 @@ function renderAlerts(user) {
     const body = document.createElement("p");
     body.textContent = scrubOperatorText(alert.body);
     card.append(header, body);
-    row.append(remove, card);
-    bindRevealSwipe(row, card, closeOpenAlerts);
-    els.alertList.append(row);
+    els.alertList.append(card);
   });
 }
 
@@ -834,17 +829,6 @@ function renderEmojiPicker(user) {
   });
 }
 
-function deleteNotification(noticeId) {
-  const user = currentUser();
-  if (!user) return;
-  state.notifications = state.notifications.filter((notice) => {
-    if (notice.id !== noticeId) return true;
-    return !(notice.userId === user.id || (user.isAdmin && notice.userId === "admin"));
-  });
-  persist();
-  renderAlerts(user);
-}
-
 function clearNotifications() {
   const user = currentUser();
   if (!user || !notificationsFor(user).length) return;
@@ -871,10 +855,6 @@ function clearLedger() {
   persist();
   renderHome(user);
   showToast("Ledger", "Deleted.");
-}
-
-function closeOpenAlerts() {
-  document.querySelectorAll(".alert-row.is-open").forEach((row) => row.classList.remove("is-open"));
 }
 
 function closeOpenLedgers() {
@@ -1590,8 +1570,13 @@ function resizeImage(file) {
 
 function handleIncomingState(nextState) {
   const wasLoggedIn = Boolean(currentUserId);
+  const incoming = normalizeState(nextState);
+  const currentUpdatedAt = Math.round(Number(state?.updatedAt) || 0);
+  const incomingUpdatedAt = Math.round(Number(incoming.updatedAt) || 0);
+  if (incomingUpdatedAt <= currentUpdatedAt) return;
+
   const knownLedgerIds = new Set((state?.ledger || []).map((entry) => entry.id));
-  state = normalizeState(nextState);
+  state = incoming;
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   renderAll();
   if (wasLoggedIn && !currentUser()) showToast("\uc0ac\uc6a9\uc790 \uc0ad\uc81c", "\uacc4\uc815\uc774 \uc0ad\uc81c\ub418\uc5c8\uc2b5\ub2c8\ub2e4.");
@@ -1631,7 +1616,8 @@ async function initRemoteSync() {
     remoteSync.enabled = true;
     remoteSync.push = async (nextState) => {
       try {
-        await set(stateRef, JSON.parse(JSON.stringify(nextState)));
+        const payload = JSON.parse(JSON.stringify(nextState));
+        await set(stateRef, payload);
       } catch {
         showToast("Sync failed", "Check Firebase rules.");
       }
@@ -1642,7 +1628,7 @@ async function initRemoteSync() {
       remoteSync.applying = true;
       state = normalizeState(snapshot.val());
       await ensureAdmin();
-      persist({ broadcast: false, remote: false });
+      persist({ broadcast: false, remote: false, touch: false });
       remoteSync.applying = false;
     } else {
       await remoteSync.push(state);
@@ -1653,6 +1639,10 @@ async function initRemoteSync() {
       remoteSync.applying = true;
       const previousState = state;
       const incoming = normalizeState(nextSnapshot.val());
+      if ((Number(incoming.updatedAt) || 0) <= (Number(previousState?.updatedAt) || 0)) {
+        remoteSync.applying = false;
+        return;
+      }
       state = incoming;
       await ensureAdmin();
       const incomingWithAdmin = state;
@@ -1829,7 +1819,7 @@ async function init() {
   renderAll();
 
   if ("serviceWorker" in navigator && location.protocol !== "file:") {
-    navigator.serviceWorker.register("./sw.js?v=6").catch(() => {});
+    navigator.serviceWorker.register("./sw.js?v=7").catch(() => {});
   }
 }
 

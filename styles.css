@@ -814,14 +814,12 @@ select:focus {
   padding: 14px;
 }
 
-.alert-row,
 .ledger-row {
   position: relative;
   overflow: hidden;
   border-radius: 8px;
 }
 
-.alert-row .alert-card,
 .ledger-row .ledger-card {
   position: relative;
   z-index: 1;
@@ -829,7 +827,6 @@ select:focus {
   touch-action: pan-y;
 }
 
-.alert-row.is-open .alert-card,
 .ledger-row.is-open .ledger-card {
   transform: translateX(-64px);
 }
