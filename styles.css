@@ -188,6 +188,7 @@ select:focus {
 .round-action,
 .fab-button,
 .avatar-button,
+.power-button,
 .nav-item,
 .profile-photo {
   border: 0;
@@ -209,6 +210,7 @@ select:focus {
 .round-action:active,
 .fab-button:active,
 .avatar-button:active,
+.power-button:active,
 .nav-item:active,
 .profile-photo:active {
   transform: translateY(1px);
@@ -229,6 +231,15 @@ select:focus {
 
 .soft-button.full {
   width: 100%;
+}
+
+.soft-button.is-active {
+  color: #f8fafb;
+  background: linear-gradient(145deg, #24272d, #353941);
+}
+
+.soft-button.danger-soft {
+  color: #a94d5c;
 }
 
 .form-error {
@@ -314,6 +325,27 @@ select:focus {
   background-color: #f6f8fa;
 }
 
+.top-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.power-button {
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  color: #f8fafb;
+  background: rgba(255, 255, 255, 0.12);
+  box-shadow: inset 2px 2px 5px rgba(255, 255, 255, 0.12), inset -3px -3px 8px rgba(0, 0, 0, 0.22);
+}
+
+.power-button svg {
+  width: 1.05rem;
+  height: 1.05rem;
+}
+
 .utility-row {
   display: grid;
   grid-template-columns: 1fr auto;
@@ -349,7 +381,7 @@ select:focus {
 .currency-switch {
   height: 48px;
   display: grid;
-  grid-template-columns: 48px 66px;
+  grid-template-columns: 48px 48px;
   padding: 5px;
   border-radius: 8px;
   background: var(--surface);
@@ -363,6 +395,10 @@ select:focus {
   font-size: 0.78rem;
   font-weight: 950;
   background: transparent;
+}
+
+#coinMode {
+  font-size: 1.05rem;
 }
 
 .currency-switch button.is-active {
@@ -695,6 +731,19 @@ select:focus {
   color: var(--gold);
 }
 
+.title-adjust-button {
+  flex: 0 0 auto;
+  min-width: 38px;
+  height: 28px;
+  border: 0;
+  border-radius: 8px;
+  color: var(--ink);
+  font-size: 0.72rem;
+  font-weight: 950;
+  background: #f4f7fa;
+  box-shadow: 4px 4px 8px rgba(153, 166, 182, 0.48), -4px -4px 8px rgba(255, 255, 255, 0.94);
+}
+
 .person-sub {
   margin: 0;
   color: var(--muted);
@@ -765,20 +814,24 @@ select:focus {
   padding: 14px;
 }
 
-.alert-row {
+.alert-row,
+.ledger-row {
   position: relative;
   overflow: hidden;
   border-radius: 8px;
 }
 
-.alert-row .alert-card {
+.alert-row .alert-card,
+.ledger-row .ledger-card {
   position: relative;
   z-index: 1;
   transition: transform 180ms ease;
   touch-action: pan-y;
 }
 
-.alert-row.is-open .alert-card {
+.alert-row.is-open .alert-card,
+.ledger-row.is-open .ledger-card,
+.timeline-list.is-editing .alert-row .alert-card {
   transform: translateX(-64px);
 }
 
@@ -797,6 +850,12 @@ select:focus {
 .alert-delete svg {
   width: 1.1rem;
   height: 1.1rem;
+}
+
+.action-sheet-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
 }
 
 .timeline-card header {
@@ -1047,6 +1106,35 @@ select:focus {
   padding: 0;
   border: 0;
   background: transparent;
+}
+
+.sheet-dialog.mini-sheet {
+  width: min(calc(100% - 42px), 360px);
+}
+
+.recipient-picker {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.recipient-chip {
+  min-height: 42px;
+  border: 0;
+  border-radius: 8px;
+  color: var(--ink);
+  font-size: 0.83rem;
+  font-weight: 900;
+  background: #f5f8fa;
+  box-shadow: 5px 5px 10px rgba(153, 166, 182, 0.5), -5px -5px 10px rgba(255, 255, 255, 0.94);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recipient-chip.is-selected {
+  color: #f8fafb;
+  background: linear-gradient(145deg, #24272d, #353941);
 }
 
 .sheet-dialog::backdrop {

@@ -5,14 +5,35 @@ const GITHUB_SYNC_KEY = "secret-chamber-credits-github-sync";
 const ADMIN_NAME = "\uc704\ub4dc";
 const ADMIN_PIN = "4001";
 const ADMIN_ID = "operator-with-4001";
-const VERSION = 8;
+const VERSION = 9;
 
 const COINS = [
-  { key: "gold", label: "\uae08\ud654", short: "G", value: 10000, emoji: "\uD83D\uDFE1" },
+  { key: "gold", label: "\uae08\ud654", short: "G", value: 10000, emoji: "\uD83E\uDE99" },
   { key: "silver", label: "\uc740\ud654", short: "S", value: 1, emoji: "\u26AA" },
 ];
 
-const DEFAULT_EMOJIS = ["\u2728", "\uD83C\uDF19", "\uD83C\uDF40", "\uD83C\uDF52", "\uD83C\uDF6F", "\uD83C\uDF80", "\uD83C\uDF81", "\uD83C\uDFA7", "\uD83D\uDC8E", "\uD83D\uDE80"];
+const DEFAULT_EMOJIS = [
+  "\u2728",
+  "\uD83C\uDF19",
+  "\uD83C\uDF40",
+  "\uD83C\uDF52",
+  "\uD83C\uDF6F",
+  "\uD83C\uDF80",
+  "\uD83C\uDF81",
+  "\uD83C\uDFA7",
+  "\uD83D\uDC8E",
+  "\uD83D\uDE80",
+  "\uD83C\uDF08",
+  "\uD83C\uDF6D",
+  "\uD83E\uDDF8",
+  "\uD83E\uDE84",
+  "\uD83C\uDF38",
+  "\u2B50",
+  "\uD83D\uDD2E",
+  "\uD83E\uDE77",
+  "\uD83E\uDD8B",
+  "\uD83C\uDF53",
+];
 const sourceId = crypto.randomUUID ? crypto.randomUUID() : String(Date.now());
 const channel = "BroadcastChannel" in window ? new BroadcastChannel("secret-chamber-credits") : null;
 
@@ -33,6 +54,10 @@ let state = null;
 let currentUserId = localStorage.getItem(SESSION_KEY);
 let ui = loadUi();
 let selectedManageUserId = null;
+let selectedActionUserId = null;
+let selectedRecipientIds = new Set();
+let transferMultiple = false;
+let alertsEditing = false;
 let adjustMode = "add";
 
 const $ = (selector) => document.querySelector(selector);
@@ -47,6 +72,7 @@ const els = {
   welcomeText: $("#welcomeText"),
   heroName: $("#heroName"),
   profileShortcut: $("#profileShortcut"),
+  quickLogoutButton: $("#quickLogoutButton"),
   searchInput: $("#searchInput"),
   krwMode: $("#krwMode"),
   coinMode: $("#coinMode"),
@@ -70,6 +96,7 @@ const els = {
   peopleFilter: $("#peopleFilter"),
   peopleList: $("#peopleList"),
   ledgerSection: $("#ledgerSection"),
+  clearLedgerButton: $("#clearLedgerButton"),
   ledgerList: $("#ledgerList"),
   chatList: $("#chatList"),
   chatForm: $("#chatForm"),
@@ -91,6 +118,7 @@ const els = {
   transferForm: $("#transferForm"),
   transferTitle: $("#transferTitle"),
   recipientSelect: $("#recipientSelect"),
+  recipientPicker: $("#recipientPicker"),
   transferAmountFields: $("#transferAmountFields"),
   transferMemo: $("#transferMemo"),
   transferError: $("#transferError"),
@@ -100,6 +128,11 @@ const els = {
   manageAmountFields: $("#manageAmountFields"),
   manageMemo: $("#manageMemo"),
   manageError: $("#manageError"),
+  userActionDialog: $("#userActionDialog"),
+  userActionTitle: $("#userActionTitle"),
+  actionResetUserButton: $("#actionResetUserButton"),
+  actionDeleteUserButton: $("#actionDeleteUserButton"),
+  emojiDialog: $("#emojiDialog"),
   toastRegion: $("#toastRegion"),
   emptyTemplate: $("#emptyTemplate"),
 };
@@ -339,10 +372,27 @@ function renderAmountInto(element, amount) {
   });
 }
 
+function digitsOnly(value) {
+  return String(value || "").replace(/[^\d]/g, "");
+}
+
+function formatPlainNumber(value) {
+  return Math.max(0, Math.round(Number(value) || 0)).toLocaleString("ko-KR");
+}
+
+function parseFormattedNumber(value) {
+  return Math.round(Number(digitsOnly(value)) || 0);
+}
+
+function formatAmountTextInput(input) {
+  const raw = digitsOnly(input.value);
+  input.value = raw ? Number(raw).toLocaleString("ko-KR") : "";
+}
+
 function parseAmount(container) {
   if (ui.currency === "krw") {
     const input = container.querySelector("[data-amount='krw']");
-    return Math.round(Number(input?.value || 0));
+    return parseFormattedNumber(input?.value);
   }
 
   return COINS.reduce((sum, coin) => {
@@ -367,14 +417,17 @@ function renderAmountFields(container, amount = 0, options = {}) {
     const label = document.createElement("label");
     label.textContent = "\uae08\uc561";
     const input = document.createElement("input");
-    input.type = "number";
+    input.type = "text";
     input.inputMode = "numeric";
+    input.autocomplete = "off";
+    input.pattern = "[0-9,]*";
     input.min = "1";
     input.step = "1";
     input.placeholder = maxAmount === null ? "0" : `0 ~ ${formatAmount(maxAmount, "krw")}`;
     if (maxAmount !== null) input.max = String(maxAmount);
-    input.value = amount > 0 ? String(Math.round(amount)) : "";
+    input.value = amount > 0 ? formatPlainNumber(amount) : "";
     input.dataset.amount = "krw";
+    input.addEventListener("input", () => formatAmountTextInput(input));
     label.append(input);
     container.append(label);
     return;
@@ -463,7 +516,12 @@ function renderHeader(user) {
 }
 
 function renderHome(user) {
-  renderAmountInto(els.walletBalance, user.balance);
+  if (user.isAdmin) {
+    els.walletBalance.textContent = "MASTER";
+    els.walletBalance.classList.remove("coin-amount");
+  } else {
+    renderAmountInto(els.walletBalance, user.balance);
+  }
   els.roleBadge.textContent = user.isAdmin ? "Operator" : "Member";
   els.roleBadge.classList.toggle("operator", user.isAdmin);
   els.adminPanel.classList.toggle("is-hidden", !user.isAdmin);
@@ -536,6 +594,15 @@ function renderPeople(user) {
     const strong = document.createElement("strong");
     strong.textContent = person.id === user.id ? `${person.name} - \ub098` : person.name;
     title.append(strong);
+    if (user.isAdmin && !isSecretOperator(person)) {
+      const titleManage = document.createElement("button");
+      titleManage.className = "title-adjust-button";
+      titleManage.type = "button";
+      titleManage.textContent = "+/-";
+      titleManage.setAttribute("aria-label", `${person.name} adjust`);
+      titleManage.addEventListener("click", () => openManageDialog(person.id));
+      title.append(titleManage);
+    }
     if (person.isAdmin) title.append(makeIconUse("icon-crown"));
 
     const sub = document.createElement("p");
@@ -551,30 +618,14 @@ function renderPeople(user) {
     const actions = document.createElement("div");
     actions.className = "person-actions";
     if (user.isAdmin) {
-      const manage = document.createElement("button");
-      manage.className = "mini-button";
-      manage.type = "button";
-      manage.setAttribute("aria-label", `${person.name} adjust`);
-      manage.textContent = "+/-";
-      manage.addEventListener("click", () => openManageDialog(person.id));
-      actions.append(manage);
-
       if (!person.isAdmin) {
-        const reset = document.createElement("button");
-        reset.className = "mini-button tiny";
-        reset.type = "button";
-        reset.setAttribute("aria-label", `${person.name} reset balance`);
-        reset.textContent = "0";
-        reset.addEventListener("click", () => resetUserCredits(person.id));
-        actions.append(reset);
-
-        const remove = document.createElement("button");
-        remove.className = "mini-button danger";
-        remove.type = "button";
-        remove.setAttribute("aria-label", `${person.name} delete`);
-        remove.append(makeIconUse("icon-trash"));
-        remove.addEventListener("click", () => deleteUser(person.id));
-        actions.append(remove);
+        const menu = document.createElement("button");
+        menu.className = "mini-button menu-button";
+        menu.type = "button";
+        menu.setAttribute("aria-label", `${person.name} menu`);
+        menu.append(makeIconUse("icon-menu"));
+        menu.addEventListener("click", () => openUserActionDialog(person.id));
+        actions.append(menu);
       }
     } else if (person.id !== user.id) {
       const send = document.createElement("button");
@@ -602,16 +653,28 @@ function renderPeople(user) {
 function renderLedger(user) {
   els.ledgerList.textContent = "";
   const entries = state.ledger.filter((entry) => user.isAdmin || entryTouchesUser(entry, user.id)).slice(0, 40);
+  if (els.clearLedgerButton) els.clearLedgerButton.disabled = entries.length === 0;
   if (!entries.length) {
     els.ledgerList.append(emptyState("\uc774\ub3d9 \ub0b4\uc5ed\uc774 \uc5c6\uc2b5\ub2c8\ub2e4"));
     return;
   }
-  entries.forEach((entry) => els.ledgerList.append(ledgerCard(entry)));
+  entries.forEach((entry) => els.ledgerList.append(ledgerRow(entry)));
 }
 
-function ledgerCard(entry) {
-  const card = document.createElement("article");
-  card.className = "timeline-card";
+function ledgerRow(entry) {
+  const row = document.createElement("article");
+  row.className = "ledger-row";
+  row.dataset.ledgerId = entry.id;
+
+  const remove = document.createElement("button");
+  remove.className = "alert-delete ledger-delete";
+  remove.type = "button";
+  remove.setAttribute("aria-label", "Delete ledger");
+  remove.append(makeIconUse("icon-trash"));
+  remove.addEventListener("click", () => deleteLedgerEntry(entry.id));
+
+  const card = document.createElement("div");
+  card.className = "timeline-card ledger-card";
   const header = document.createElement("header");
   const title = document.createElement("strong");
   title.textContent = ledgerTitle(entry);
@@ -622,7 +685,9 @@ function ledgerCard(entry) {
   const body = document.createElement("p");
   body.textContent = ledgerBody(entry);
   card.append(header, body);
-  return card;
+  row.append(remove, card);
+  bindRevealSwipe(row, card, closeOpenLedgers);
+  return row;
 }
 
 function entryName(entry, field, idField) {
@@ -700,7 +765,11 @@ function notificationsFor(user) {
 function renderAlerts(user) {
   els.alertList.textContent = "";
   const alerts = notificationsFor(user);
+  if (!alerts.length) alertsEditing = false;
   els.markReadButton.disabled = alerts.length === 0;
+  els.markReadButton.classList.toggle("is-active", alertsEditing);
+  els.markReadButton.textContent = alertsEditing ? "\uc644\ub8cc" : "\uc815\ub9ac";
+  els.alertList.classList.toggle("is-editing", alertsEditing);
   els.unreadDot.classList.toggle("is-hidden", alerts.length === 0);
 
   if (!alerts.length) {
@@ -733,7 +802,7 @@ function renderAlerts(user) {
     body.textContent = scrubOperatorText(alert.body);
     card.append(header, body);
     row.append(remove, card);
-    bindAlertSwipe(row, card);
+    bindRevealSwipe(row, card, closeOpenAlerts);
     els.alertList.append(row);
   });
 }
@@ -756,9 +825,11 @@ function renderEmojiPicker(user) {
     button.setAttribute("aria-label", `Profile icon ${emoji}`);
     button.addEventListener("click", () => {
       user.emoji = emoji;
+      user.photo = "";
       user.lastActive = Date.now();
       persist();
       renderAll();
+      closeDialog(els.emojiDialog);
     });
     els.emojiPicker.append(button);
   });
@@ -775,11 +846,42 @@ function deleteNotification(noticeId) {
   renderAlerts(user);
 }
 
+function toggleAlertEditing() {
+  const user = currentUser();
+  if (!user || !notificationsFor(user).length) return;
+  alertsEditing = !alertsEditing;
+  closeOpenAlerts();
+  renderAlerts(user);
+}
+
+function deleteLedgerEntry(ledgerId) {
+  const user = currentUser();
+  if (!user?.isAdmin) return;
+  state.ledger = state.ledger.filter((entry) => entry.id !== ledgerId);
+  persist();
+  renderHome(user);
+}
+
+function clearLedger() {
+  const user = currentUser();
+  if (!user?.isAdmin || !state.ledger.length) return;
+  const confirmed = window.confirm("Delete all ledger entries?");
+  if (!confirmed) return;
+  state.ledger = [];
+  persist();
+  renderHome(user);
+  showToast("Ledger", "Deleted.");
+}
+
 function closeOpenAlerts() {
   document.querySelectorAll(".alert-row.is-open").forEach((row) => row.classList.remove("is-open"));
 }
 
-function bindAlertSwipe(row, card) {
+function closeOpenLedgers() {
+  document.querySelectorAll(".ledger-row.is-open").forEach((row) => row.classList.remove("is-open"));
+}
+
+function bindRevealSwipe(row, card, closeRows) {
   let startX = 0;
   let startY = 0;
   let dragging = false;
@@ -804,7 +906,7 @@ function bindAlertSwipe(row, card) {
     row.classList.remove("is-dragging");
     const dx = event.clientX - startX;
     if (dx < -42) {
-      closeOpenAlerts();
+      closeRows();
       row.classList.add("is-open");
     } else if (dx > 18) {
       row.classList.remove("is-open");
@@ -863,30 +965,75 @@ function closeDialog(dialog) {
   requestAnimationFrame(restoreMobileViewport);
 }
 
-function openTransferDialog(preselectedUserId = "") {
+function openTransferDialog(preselectedUserId = "", options = {}) {
   const user = currentUser();
   if (!user) return;
+  transferMultiple = Boolean(options.multiple);
+  selectedRecipientIds = new Set(preselectedUserId ? [preselectedUserId] : []);
   els.transferError.textContent = "";
   els.transferMemo.value = "";
   renderRecipientOptions(preselectedUserId);
-  renderAmountFields(els.transferAmountFields, 0, { maxAmount: user.balance || 0 });
-  els.transferTitle.textContent = "\ud06c\ub808\ub527 \ubcf4\ub0b4\uae30";
+  renderAmountFields(els.transferAmountFields, 0, { maxAmount: transferMaxAmount(user) });
+  els.transferTitle.textContent = transferMultiple ? "\uc5ec\ub7ec \uba85\uc5d0\uac8c \ubcf4\ub0b4\uae30" : "\ud06c\ub808\ub527 \ubcf4\ub0b4\uae30";
   openDialog(els.transferDialog);
+}
+
+function transferRecipients(user = currentUser()) {
+  if (!user) return [];
+  return state.users
+    .filter((person) => person.id !== user.id && !isSecretOperator(person))
+    .sort((a, b) => comparableName(a.name).localeCompare(comparableName(b.name), "ko-KR"));
+}
+
+function transferMaxAmount(user = currentUser()) {
+  if (!user || user.isAdmin) return null;
+  const count = transferMultiple ? Math.max(selectedRecipientIds.size, 1) : 1;
+  return Math.floor((user.balance || 0) / count);
+}
+
+function refreshTransferAmountLimit() {
+  if (!els.transferDialog.open) return;
+  const currentAmount = parseAmount(els.transferAmountFields);
+  const maxAmount = transferMaxAmount();
+  const nextAmount = maxAmount === null ? currentAmount : Math.min(currentAmount, maxAmount);
+  renderAmountFields(els.transferAmountFields, nextAmount, { maxAmount });
+}
+
+function toggleRecipientSelection(userId) {
+  if (selectedRecipientIds.has(userId)) selectedRecipientIds.delete(userId);
+  else selectedRecipientIds.add(userId);
+  renderRecipientOptions();
+  refreshTransferAmountLimit();
 }
 
 function renderRecipientOptions(preselectedUserId = "") {
   const user = currentUser();
   els.recipientSelect.textContent = "";
-  state.users
-    .filter((person) => person.id !== user.id && !isSecretOperator(person))
-    .sort((a, b) => comparableName(a.name).localeCompare(comparableName(b.name), "ko-KR"))
-    .forEach((person) => {
+  els.recipientPicker.textContent = "";
+  els.recipientSelect.required = !transferMultiple;
+  els.recipientSelect.classList.toggle("is-hidden", transferMultiple);
+  els.recipientPicker.classList.toggle("is-hidden", !transferMultiple);
+
+  const recipients = transferRecipients(user);
+  if (!transferMultiple) {
+    recipients.forEach((person) => {
       const option = document.createElement("option");
       option.value = person.id;
-      option.textContent = person.isAdmin ? `${person.name} - Operator` : person.name;
+      option.textContent = person.name;
       if (person.id === preselectedUserId) option.selected = true;
       els.recipientSelect.append(option);
     });
+    return;
+  }
+
+  recipients.forEach((person) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `recipient-chip${selectedRecipientIds.has(person.id) ? " is-selected" : ""}`;
+    button.textContent = displayName(person);
+    button.addEventListener("click", () => toggleRecipientSelection(person.id));
+    els.recipientPicker.append(button);
+  });
 }
 
 function openManageDialog(userId) {
@@ -901,6 +1048,22 @@ function openManageDialog(userId) {
   document.querySelectorAll("[data-adjust]").forEach((button) => button.classList.toggle("is-active", button.dataset.adjust === adjustMode));
   renderAmountFields(els.manageAmountFields);
   openDialog(els.manageDialog);
+}
+
+function openUserActionDialog(userId) {
+  const user = currentUser();
+  const target = getUser(userId);
+  if (!user?.isAdmin || !target || isSecretOperator(target)) return;
+  selectedActionUserId = userId;
+  els.userActionTitle.textContent = displayName(target);
+  openDialog(els.userActionDialog);
+}
+
+function openEmojiDialog() {
+  const user = currentUser();
+  if (!user) return;
+  renderEmojiPicker(user);
+  openDialog(els.emojiDialog);
 }
 
 function addNotification(userId, title, body, createdAt = Date.now()) {
@@ -974,9 +1137,11 @@ function toastForLedger(entry) {
   if (!user.isAdmin && !entryTouchesUser(entry, user.id)) return;
 
   if (entry.type === "transfer") {
-    if (entry.toId === user.id) showToast("\ud06c\ub808\ub527 \ub3c4\ucc29", `${entry.fromName}\ub2d8\uc774 ${formatAmount(entry.amount)}\ub97c \ubcf4\ub0c8\uc2b5\ub2c8\ub2e4.`);
-    else if (entry.fromId === user.id) showToast("\uc1a1\uae08 \uc644\ub8cc", `${entry.toName}\ub2d8\uc5d0\uac8c ${formatAmount(entry.amount)}\ub97c \ubcf4\ub0c8\uc2b5\ub2c8\ub2e4.`);
-    else if (user.isAdmin) showToast("\ud06c\ub808\ub527 \uc774\ub3d9", `${entry.fromName} -> ${entry.toName} - ${formatAmount(entry.amount)}`);
+    const fromName = entryName(entry, "fromName", "fromId");
+    const toName = entryName(entry, "toName", "toId");
+    if (entry.toId === user.id) showToast("\ud06c\ub808\ub527 \ub3c4\ucc29", `${fromName}\ub2d8\uc774 ${formatAmount(entry.amount)}\ub97c \ubcf4\ub0c8\uc2b5\ub2c8\ub2e4.`);
+    else if (entry.fromId === user.id) showToast("\uc1a1\uae08 \uc644\ub8cc", `${toName}\ub2d8\uc5d0\uac8c ${formatAmount(entry.amount)}\ub97c \ubcf4\ub0c8\uc2b5\ub2c8\ub2e4.`);
+    else if (user.isAdmin) showToast("\ud06c\ub808\ub527 \uc774\ub3d9", `${fromName} -> ${toName} - ${formatAmount(entry.amount)}`);
     return;
   }
 
@@ -1155,14 +1320,45 @@ function transferCredits(toId, amount, memo) {
   const to = getUser(toId);
   if (!from || !to) return "\ubc1b\ub294 \uc0ac\ub78c\uc744 \uc120\ud0dd\ud574\uc8fc\uc138\uc694.";
   if (from.id === to.id) return "\uc790\uae30 \uc790\uc2e0\uc5d0\uac8c\ub294 \ubcf4\ub0bc \uc218 \uc5c6\uc2b5\ub2c8\ub2e4.";
+  if (isSecretOperator(to)) return "\ubcf4\ub0bc \uc218 \uc5c6\ub294 \uacc4\uc815\uc785\ub2c8\ub2e4.";
   if (!Number.isFinite(amount) || amount <= 0) return "\uae08\uc561\uc744 \uc785\ub825\ud574\uc8fc\uc138\uc694.";
-  if ((from.balance || 0) < amount) return "\uc794\uc561\uc774 \ubd80\uc871\ud569\ub2c8\ub2e4.";
+  if (!from.isAdmin && (from.balance || 0) < amount) return "\uc794\uc561\uc774 \ubd80\uc871\ud569\ub2c8\ub2e4.";
 
-  from.balance = Math.max(0, Math.round(from.balance - amount));
+  if (!from.isAdmin) from.balance = Math.max(0, Math.round(from.balance - amount));
   to.balance = Math.round((to.balance || 0) + amount);
   from.lastActive = Date.now();
   to.lastActive = Date.now();
   addLedger({ type: "transfer", fromId: from.id, toId: to.id, amount, memo });
+  return "";
+}
+
+function transferCreditsToMany(toIds, amount, memo) {
+  const from = currentUser();
+  const uniqueIds = Array.from(new Set(toIds || []));
+  const recipients = uniqueIds.map((id) => getUser(id)).filter(Boolean);
+  if (!from || !recipients.length) return "\ubc1b\ub294 \uc0ac\ub78c\uc744 \uc120\ud0dd\ud574\uc8fc\uc138\uc694.";
+  if (recipients.some((to) => to.id === from.id || isSecretOperator(to))) return "\ubcf4\ub0bc \uc218 \uc5c6\ub294 \uacc4\uc815\uc774 \ud3ec\ud568\ub418\uc5c8\uc2b5\ub2c8\ub2e4.";
+  if (!Number.isFinite(amount) || amount <= 0) return "\uae08\uc561\uc744 \uc785\ub825\ud574\uc8fc\uc138\uc694.";
+
+  const total = amount * recipients.length;
+  if (!from.isAdmin && (from.balance || 0) < total) return "\uc794\uc561\uc774 \ubd80\uc871\ud569\ub2c8\ub2e4.";
+
+  const now = Date.now();
+  if (!from.isAdmin) from.balance = Math.max(0, Math.round(from.balance - total));
+  from.lastActive = now;
+  const entries = recipients.map((to) => {
+    to.balance = Math.round((to.balance || 0) + amount);
+    to.lastActive = now;
+    return enrichLedger({ type: "transfer", fromId: from.id, toId: to.id, amount, memo, createdAt: now });
+  });
+  entries.reverse().forEach((entry) => {
+    state.ledger.unshift(entry);
+    createLedgerNotifications(entry);
+  });
+  state.ledger = state.ledger.slice(0, 400);
+  persist();
+  renderAll();
+  showToast("\uc1a1\uae08 \uc644\ub8cc", `${recipients.length}\uba85 - ${formatAmount(amount)}`);
   return "";
 }
 
@@ -1393,6 +1589,14 @@ function handleIncomingState(nextState) {
     .forEach((entry) => toastForLedger(entry));
 }
 
+function logout() {
+  currentUserId = null;
+  localStorage.removeItem(SESSION_KEY);
+  ui.tab = "home";
+  saveUi();
+  showAuth();
+}
+
 async function initRemoteSync() {
   try {
     const configModule = await import("./firebase-config.js");
@@ -1452,6 +1656,7 @@ async function initRemoteSync() {
 function bindEvents() {
   els.authForm.addEventListener("submit", handleAuth);
   els.profileShortcut.addEventListener("click", () => setTab("profile"));
+  els.quickLogoutButton.addEventListener("click", logout);
 
   els.searchInput.addEventListener("input", () => {
     ui.search = els.searchInput.value;
@@ -1464,7 +1669,7 @@ function bindEvents() {
       ui.currency = button.dataset.currency;
       saveUi();
       renderAll();
-      if (els.transferDialog.open) renderAmountFields(els.transferAmountFields, 0, { maxAmount: currentUser()?.balance || 0 });
+      if (els.transferDialog.open) renderAmountFields(els.transferAmountFields, parseAmount(els.transferAmountFields), { maxAmount: transferMaxAmount() });
       if (els.manageDialog.open) renderAmountFields(els.manageAmountFields);
     });
   });
@@ -1476,14 +1681,15 @@ function bindEvents() {
   });
 
   document.querySelectorAll(".nav-item").forEach((button) => button.addEventListener("click", () => setTab(button.dataset.tab)));
-  els.fabButton.addEventListener("click", () => openTransferDialog());
-  els.walletSendButton.addEventListener("click", () => openTransferDialog());
+  els.fabButton.addEventListener("click", () => openTransferDialog("", { multiple: true }));
+  els.walletSendButton.addEventListener("click", () => openTransferDialog("", { multiple: true }));
   document.querySelectorAll("[data-close-dialog]").forEach((button) => button.addEventListener("click", () => closeDialog(button.closest("dialog"))));
 
   els.transferForm.addEventListener("submit", (event) => {
     event.preventDefault();
     const amount = parseAmount(els.transferAmountFields);
-    const error = transferCredits(els.recipientSelect.value, amount, normalizeName(els.transferMemo.value));
+    const recipients = transferMultiple ? Array.from(selectedRecipientIds) : [els.recipientSelect.value];
+    const error = transferCreditsToMany(recipients, amount, normalizeName(els.transferMemo.value));
     els.transferError.textContent = error;
     if (!error) closeDialog(els.transferDialog);
   });
@@ -1509,6 +1715,7 @@ function bindEvents() {
   });
 
   els.resetButton.addEventListener("click", resetCredits);
+  els.clearLedgerButton.addEventListener("click", clearLedger);
 
   if (els.githubSaveConfig) {
     els.githubSaveConfig.addEventListener("click", () => {
@@ -1553,18 +1760,24 @@ function bindEvents() {
 
   els.clearChatButton.addEventListener("click", clearChats);
 
-  els.markReadButton.addEventListener("click", () => {
-    closeOpenAlerts();
+  els.markReadButton.addEventListener("click", toggleAlertEditing);
+
+  els.actionResetUserButton.addEventListener("click", () => {
+    const targetId = selectedActionUserId;
+    closeDialog(els.userActionDialog);
+    resetUserCredits(targetId);
+  });
+
+  els.actionDeleteUserButton.addEventListener("click", () => {
+    const targetId = selectedActionUserId;
+    closeDialog(els.userActionDialog);
+    deleteUser(targetId);
   });
 
   els.profileForm.addEventListener("submit", handleProfileSave);
   els.photoInput.addEventListener("change", () => handlePhoto(els.photoInput.files[0]));
-  els.profilePhotoButton.addEventListener("click", () => els.photoInput.click());
-  els.logoutButton.addEventListener("click", () => {
-    currentUserId = null;
-    localStorage.removeItem(SESSION_KEY);
-    showAuth();
-  });
+  els.profilePhotoButton.addEventListener("click", openEmojiDialog);
+  els.logoutButton.addEventListener("click", logout);
 
   window.addEventListener("storage", (event) => {
     if (event.key === STORAGE_KEY && event.newValue) {
@@ -1595,12 +1808,15 @@ async function init() {
   if (!currentUser()) {
     currentUserId = null;
     localStorage.removeItem(SESSION_KEY);
+  } else {
+    ui.tab = "home";
+    saveUi();
   }
 
   renderAll();
 
   if ("serviceWorker" in navigator && location.protocol !== "file:") {
-    navigator.serviceWorker.register("./sw.js?v=4").catch(() => {});
+    navigator.serviceWorker.register("./sw.js?v=5").catch(() => {});
   }
 }
 

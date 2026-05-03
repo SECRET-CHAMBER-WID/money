@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#e6ecf2" />
     <title>Secret Chamber Credits</title>
     <link rel="manifest" href="./manifest.json" />
-    <link rel="stylesheet" href="./styles.css?v=9" />
+    <link rel="stylesheet" href="./styles.css?v=10" />
   </head>
   <body>
     <svg class="icon-defs" aria-hidden="true">
@@ -48,6 +48,12 @@
       <symbol id="icon-x" viewBox="0 0 24 24">
         <path d="M6 6l12 12M18 6 6 18" />
       </symbol>
+      <symbol id="icon-power" viewBox="0 0 24 24">
+        <path d="M12 3v9M6.6 6.7a7 7 0 1 0 10.8 0" />
+      </symbol>
+      <symbol id="icon-menu" viewBox="0 0 24 24">
+        <path d="M5 7h14M5 12h14M5 17h14" />
+      </symbol>
     </svg>
 
     <div id="toastRegion" class="toast-region" aria-live="polite"></div>
@@ -78,7 +84,12 @@
             <p id="welcomeText" class="hero-kicker">Secret Chamber Credits</p>
             <h1 id="heroName">Wallet</h1>
           </div>
-          <button id="profileShortcut" class="avatar-button" type="button" aria-label="Open profile"></button>
+          <div class="top-actions">
+            <button id="profileShortcut" class="avatar-button" type="button" aria-label="Open profile"></button>
+            <button id="quickLogoutButton" class="power-button" type="button" aria-label="Logout">
+              <svg><use href="#icon-power"></use></svg>
+            </button>
+          </div>
         </section>
         <div class="utility-row">
           <label class="search-box" aria-label="Search members">
@@ -87,7 +98,7 @@
           </label>
           <div class="currency-switch" role="group" aria-label="Currency">
             <button id="krwMode" type="button" data-currency="krw" class="is-active">&#65510;</button>
-            <button id="coinMode" type="button" data-currency="coin">&#44552;/&#51008;</button>
+            <button id="coinMode" type="button" data-currency="coin" aria-label="Gold and silver">&#129689;</button>
           </div>
         </div>
       </header>
@@ -138,6 +149,7 @@
             <p class="eyebrow">Ledger</p>
             <h2>&#51060;&#46041; &#45236;&#50669;</h2>
           </div>
+          <button id="clearLedgerButton" class="soft-button danger-soft" type="button">&#49325;&#51228;</button>
         </div>
         <section id="ledgerList" class="timeline-list"></section>
       </section>
@@ -181,10 +193,6 @@
             </label>
           </div>
           <form id="profileForm" class="profile-form">
-            <div class="emoji-field">
-              <p class="field-title">&#54532;&#47196;&#54596; &#50500;&#51060;&#53080;</p>
-              <div id="emojiPicker" class="emoji-picker" role="group" aria-label="Profile icon"></div>
-            </div>
             <label>
               &#51060;&#47492;
               <input id="profileName" maxlength="18" required />
@@ -241,6 +249,7 @@
           &#48155;&#45716; &#49324;&#46988;
           <select id="recipientSelect" required></select>
         </label>
+        <div id="recipientPicker" class="recipient-picker"></div>
         <div id="transferAmountFields" class="amount-fields"></div>
         <label>
           &#47700;&#47784;
@@ -248,6 +257,39 @@
         </label>
         <button class="primary-button" type="submit">&#48372;&#45236;&#44592;</button>
         <p id="transferError" class="form-error" role="alert"></p>
+      </form>
+    </dialog>
+
+    <dialog id="userActionDialog" class="sheet-dialog mini-sheet">
+      <form method="dialog" class="sheet-card">
+        <div class="sheet-head">
+          <div>
+            <p class="eyebrow">Member</p>
+            <h2 id="userActionTitle">&#49324;&#50857;&#51088; &#44288;&#47532;</h2>
+          </div>
+          <button class="icon-button" value="cancel" type="button" data-close-dialog aria-label="Close">
+            <svg><use href="#icon-x"></use></svg>
+          </button>
+        </div>
+        <div class="action-sheet-grid">
+          <button id="actionResetUserButton" class="soft-button" type="button">&#51092;&#50529; 0</button>
+          <button id="actionDeleteUserButton" class="soft-button danger-soft" type="button">&#49324;&#50857;&#51088; &#49325;&#51228;</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="emojiDialog" class="sheet-dialog">
+      <form method="dialog" class="sheet-card">
+        <div class="sheet-head">
+          <div>
+            <p class="eyebrow">Profile</p>
+            <h2>&#50500;&#51060;&#53080; &#49440;&#53469;</h2>
+          </div>
+          <button class="icon-button" value="cancel" type="button" data-close-dialog aria-label="Close">
+            <svg><use href="#icon-x"></use></svg>
+          </button>
+        </div>
+        <div id="emojiPicker" class="emoji-picker" role="group" aria-label="Profile icon"></div>
       </form>
     </dialog>
 
@@ -283,6 +325,6 @@
       </div>
     </template>
 
-    <script src="./app.js?v=9" defer></script>
+    <script src="./app.js?v=10" defer></script>
   </body>
 </html>
